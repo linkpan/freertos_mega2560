@@ -1,0 +1,324 @@
+   1               		.file	"ParTest.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	vParTestInitialise
+  13               	vParTestInitialise:
+  14               	.LFB0:
+  15               		.file 1 "ParTest/ParTest.c"
+   1:ParTest/ParTest.c **** /*
+   2:ParTest/ParTest.c ****  * FreeRTOS Kernel V10.1.1
+   3:ParTest/ParTest.c ****  * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+   4:ParTest/ParTest.c ****  *
+   5:ParTest/ParTest.c ****  * Permission is hereby granted, free of charge, to any person obtaining a copy of
+   6:ParTest/ParTest.c ****  * this software and associated documentation files (the "Software"), to deal in
+   7:ParTest/ParTest.c ****  * the Software without restriction, including without limitation the rights to
+   8:ParTest/ParTest.c ****  * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+   9:ParTest/ParTest.c ****  * the Software, and to permit persons to whom the Software is furnished to do so,
+  10:ParTest/ParTest.c ****  * subject to the following conditions:
+  11:ParTest/ParTest.c ****  *
+  12:ParTest/ParTest.c ****  * The above copyright notice and this permission notice shall be included in all
+  13:ParTest/ParTest.c ****  * copies or substantial portions of the Software.
+  14:ParTest/ParTest.c ****  *
+  15:ParTest/ParTest.c ****  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  16:ParTest/ParTest.c ****  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+  17:ParTest/ParTest.c ****  * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+  18:ParTest/ParTest.c ****  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+  19:ParTest/ParTest.c ****  * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+  20:ParTest/ParTest.c ****  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  21:ParTest/ParTest.c ****  *
+  22:ParTest/ParTest.c ****  * http://www.FreeRTOS.org
+  23:ParTest/ParTest.c ****  * http://aws.amazon.com/freertos
+  24:ParTest/ParTest.c ****  *
+  25:ParTest/ParTest.c ****  * 1 tab == 4 spaces!
+  26:ParTest/ParTest.c ****  */
+  27:ParTest/ParTest.c **** 
+  28:ParTest/ParTest.c **** /* 
+  29:ParTest/ParTest.c **** Changes from V2.0.0
+  30:ParTest/ParTest.c **** 
+  31:ParTest/ParTest.c **** 	+ Use scheduler suspends in place of critical sections.
+  32:ParTest/ParTest.c **** 
+  33:ParTest/ParTest.c **** Changes from V2.6.0
+  34:ParTest/ParTest.c **** 
+  35:ParTest/ParTest.c **** 	+ Replaced the inb() and outb() functions with direct memory
+  36:ParTest/ParTest.c **** 	  access.  This allows the port to be built with the 20050414 build of
+  37:ParTest/ParTest.c **** 	  WinAVR.
+  38:ParTest/ParTest.c **** */
+  39:ParTest/ParTest.c **** 
+  40:ParTest/ParTest.c **** #include "FreeRTOS.h"
+  41:ParTest/ParTest.c **** #include "task.h"
+  42:ParTest/ParTest.c **** #include "partest.h"
+  43:ParTest/ParTest.c **** 
+  44:ParTest/ParTest.c **** /*-----------------------------------------------------------
+  45:ParTest/ParTest.c ****  * Simple parallel port IO routines.
+  46:ParTest/ParTest.c ****  *-----------------------------------------------------------*/
+  47:ParTest/ParTest.c **** 
+  48:ParTest/ParTest.c **** #define partstALL_BITS_OUTPUT			( ( unsigned char ) 0xff )
+  49:ParTest/ParTest.c **** #define partstALL_OUTPUTS_OFF			( ( unsigned char ) 0xff )
+  50:ParTest/ParTest.c **** #define partstMAX_OUTPUT_LED			( ( unsigned char ) 7 )
+  51:ParTest/ParTest.c **** 
+  52:ParTest/ParTest.c **** static volatile unsigned char ucCurrentOutputValue = partstALL_OUTPUTS_OFF; /*lint !e956 File scope
+  53:ParTest/ParTest.c **** 
+  54:ParTest/ParTest.c **** /*-----------------------------------------------------------*/
+  55:ParTest/ParTest.c **** 
+  56:ParTest/ParTest.c **** void vParTestInitialise( void )
+  57:ParTest/ParTest.c **** {
+  16               		.loc 1 57 0
+  17               		.cfi_startproc
+  18               	/* prologue: function */
+  19               	/* frame size = 0 */
+  20               	/* stack size = 0 */
+  21               	.L__stack_usage = 0
+  58:ParTest/ParTest.c **** 	ucCurrentOutputValue = partstALL_OUTPUTS_OFF;
+  22               		.loc 1 58 0
+  23 0000 8FEF      		ldi r24,lo8(-1)
+  24 0002 8093 0000 		sts ucCurrentOutputValue,r24
+  59:ParTest/ParTest.c **** 
+  60:ParTest/ParTest.c **** 	/* Set port L direction to outputs.  Start with all output off. */
+  61:ParTest/ParTest.c **** 	DDRL = partstALL_BITS_OUTPUT;
+  25               		.loc 1 61 0
+  26 0006 8093 0A01 		sts 266,r24
+  62:ParTest/ParTest.c **** 	PORTL = 0x5a; //ucCurrentOutputValue;
+  27               		.loc 1 62 0
+  28 000a 8AE5      		ldi r24,lo8(90)
+  29 000c 8093 0B01 		sts 267,r24
+  30 0010 0895      		ret
+  31               		.cfi_endproc
+  32               	.LFE0:
+  34               	.global	vParTestSetLED
+  36               	vParTestSetLED:
+  37               	.LFB1:
+  63:ParTest/ParTest.c **** }
+  64:ParTest/ParTest.c **** /*-----------------------------------------------------------*/
+  65:ParTest/ParTest.c **** 
+  66:ParTest/ParTest.c **** void vParTestSetLED(portBASE_TYPE uxLED, portBASE_TYPE xValue )
+  67:ParTest/ParTest.c **** {
+  38               		.loc 1 67 0
+  39               		.cfi_startproc
+  40               	.LVL0:
+  41 0012 1F93      		push r17
+  42               	.LCFI0:
+  43               		.cfi_def_cfa_offset 4
+  44               		.cfi_offset 17, -3
+  45 0014 CF93      		push r28
+  46               	.LCFI1:
+  47               		.cfi_def_cfa_offset 5
+  48               		.cfi_offset 28, -4
+  49 0016 DF93      		push r29
+  50               	.LCFI2:
+  51               		.cfi_def_cfa_offset 6
+  52               		.cfi_offset 29, -5
+  53               	/* prologue: function */
+  54               	/* frame size = 0 */
+  55               	/* stack size = 3 */
+  56               	.L__stack_usage = 3
+  57               	.LVL1:
+  68:ParTest/ParTest.c **** unsigned char ucBit = ( unsigned char ) 1;
+  69:ParTest/ParTest.c **** 
+  70:ParTest/ParTest.c **** 	if( uxLED <= partstMAX_OUTPUT_LED )
+  58               		.loc 1 70 0
+  59 0018 8830      		cpi r24,lo8(8)
+  60 001a 00F4      		brsh .L2
+  61 001c 162F      		mov r17,r22
+  71:ParTest/ParTest.c **** 	{
+  72:ParTest/ParTest.c **** 		ucBit <<= uxLED;	
+  62               		.loc 1 72 0
+  63 001e C1E0      		ldi r28,lo8(1)
+  64 0020 D0E0      		ldi r29,0
+  65 0022 00C0      		rjmp 2f
+  66               		1:
+  67 0024 CC0F      		lsl r28
+  68               		2:
+  69 0026 8A95      		dec r24
+  70 0028 02F4      		brpl 1b
+  71               	.LVL2:
+  73:ParTest/ParTest.c **** 
+  74:ParTest/ParTest.c **** 		vTaskSuspendAll();
+  72               		.loc 1 74 0
+  73 002a 0E94 0000 		call vTaskSuspendAll
+  74               	.LVL3:
+  75:ParTest/ParTest.c **** 		{
+  76:ParTest/ParTest.c **** 			if( xValue == pdTRUE )
+  77:ParTest/ParTest.c **** 			{
+  78:ParTest/ParTest.c **** 				ucBit ^= ( unsigned char ) 0xff;
+  79:ParTest/ParTest.c **** 				ucCurrentOutputValue &= ucBit;
+  75               		.loc 1 79 0
+  76 002e 8091 0000 		lds r24,ucCurrentOutputValue
+  76:ParTest/ParTest.c **** 			{
+  77               		.loc 1 76 0
+  78 0032 1130      		cpi r17,lo8(1)
+  79 0034 01F4      		brne .L4
+  80               	.LVL4:
+  81               		.loc 1 79 0
+  82 0036 C095      		com r28
+  83               	.LVL5:
+  84 0038 C823      		and r28,r24
+  85 003a 00C0      		rjmp .L6
+  86               	.LVL6:
+  87               	.L4:
+  80:ParTest/ParTest.c **** 			}
+  81:ParTest/ParTest.c **** 			else
+  82:ParTest/ParTest.c **** 			{
+  83:ParTest/ParTest.c **** 				ucCurrentOutputValue |= ucBit;
+  88               		.loc 1 83 0
+  89 003c C82B      		or r28,r24
+  90               	.LVL7:
+  91               	.L6:
+  92 003e C093 0000 		sts ucCurrentOutputValue,r28
+  84:ParTest/ParTest.c **** 			}
+  85:ParTest/ParTest.c **** 
+  86:ParTest/ParTest.c **** 			PORTL = ucCurrentOutputValue;
+  93               		.loc 1 86 0
+  94 0042 8091 0000 		lds r24,ucCurrentOutputValue
+  95 0046 8093 0B01 		sts 267,r24
+  96               	/* epilogue start */
+  87:ParTest/ParTest.c **** 		}
+  88:ParTest/ParTest.c **** 		xTaskResumeAll();
+  89:ParTest/ParTest.c **** 	}
+  90:ParTest/ParTest.c **** }
+  97               		.loc 1 90 0
+  98 004a DF91      		pop r29
+  99 004c CF91      		pop r28
+ 100 004e 1F91      		pop r17
+ 101               	.LVL8:
+  88:ParTest/ParTest.c **** 	}
+ 102               		.loc 1 88 0
+ 103 0050 0C94 0000 		jmp xTaskResumeAll
+ 104               	.LVL9:
+ 105               	.L2:
+ 106               	/* epilogue start */
+ 107               		.loc 1 90 0
+ 108 0054 DF91      		pop r29
+ 109 0056 CF91      		pop r28
+ 110 0058 1F91      		pop r17
+ 111 005a 0895      		ret
+ 112               		.cfi_endproc
+ 113               	.LFE1:
+ 115               	.global	vParTestToggleLED
+ 117               	vParTestToggleLED:
+ 118               	.LFB2:
+  91:ParTest/ParTest.c **** /*-----------------------------------------------------------*/
+  92:ParTest/ParTest.c **** 
+  93:ParTest/ParTest.c **** void vParTestToggleLED( portBASE_TYPE uxLED )
+  94:ParTest/ParTest.c **** {
+ 119               		.loc 1 94 0
+ 120               		.cfi_startproc
+ 121               	.LVL10:
+ 122 005c CF93      		push r28
+ 123               	.LCFI3:
+ 124               		.cfi_def_cfa_offset 4
+ 125               		.cfi_offset 28, -3
+ 126 005e DF93      		push r29
+ 127               	.LCFI4:
+ 128               		.cfi_def_cfa_offset 5
+ 129               		.cfi_offset 29, -4
+ 130               	/* prologue: function */
+ 131               	/* frame size = 0 */
+ 132               	/* stack size = 2 */
+ 133               	.L__stack_usage = 2
+  95:ParTest/ParTest.c **** unsigned char ucBit;
+  96:ParTest/ParTest.c **** 
+  97:ParTest/ParTest.c **** 	if( uxLED <= partstMAX_OUTPUT_LED )
+ 134               		.loc 1 97 0
+ 135 0060 8830      		cpi r24,lo8(8)
+ 136 0062 00F4      		brsh .L8
+  98:ParTest/ParTest.c **** 	{
+  99:ParTest/ParTest.c **** 		ucBit = ( ( unsigned char ) 1 ) << uxLED;
+ 137               		.loc 1 99 0
+ 138 0064 C1E0      		ldi r28,lo8(1)
+ 139 0066 D0E0      		ldi r29,0
+ 140 0068 00C0      		rjmp 2f
+ 141               		1:
+ 142 006a CC0F      		lsl r28
+ 143               		2:
+ 144 006c 8A95      		dec r24
+ 145 006e 02F4      		brpl 1b
+ 146               	.LVL11:
+ 100:ParTest/ParTest.c **** 
+ 101:ParTest/ParTest.c **** 		vTaskSuspendAll();
+ 147               		.loc 1 101 0
+ 148 0070 0E94 0000 		call vTaskSuspendAll
+ 149               	.LVL12:
+ 102:ParTest/ParTest.c **** 		{
+ 103:ParTest/ParTest.c **** 			if( ucCurrentOutputValue & ucBit )
+ 150               		.loc 1 103 0
+ 151 0074 8091 0000 		lds r24,ucCurrentOutputValue
+ 152 0078 8C23      		and r24,r28
+ 153 007a 01F0      		breq .L10
+ 104:ParTest/ParTest.c **** 			{
+ 105:ParTest/ParTest.c **** 				ucCurrentOutputValue &= ~ucBit;
+ 154               		.loc 1 105 0
+ 155 007c 8091 0000 		lds r24,ucCurrentOutputValue
+ 156 0080 C095      		com r28
+ 157               	.LVL13:
+ 158 0082 C823      		and r28,r24
+ 159 0084 00C0      		rjmp .L12
+ 160               	.LVL14:
+ 161               	.L10:
+ 106:ParTest/ParTest.c **** 			}
+ 107:ParTest/ParTest.c **** 			else
+ 108:ParTest/ParTest.c **** 			{
+ 109:ParTest/ParTest.c **** 				ucCurrentOutputValue |= ucBit;
+ 162               		.loc 1 109 0
+ 163 0086 8091 0000 		lds r24,ucCurrentOutputValue
+ 164 008a C82B      		or r28,r24
+ 165               	.LVL15:
+ 166               	.L12:
+ 167 008c C093 0000 		sts ucCurrentOutputValue,r28
+ 110:ParTest/ParTest.c **** 			}
+ 111:ParTest/ParTest.c **** 
+ 112:ParTest/ParTest.c **** 			PORTL = ucCurrentOutputValue;
+ 168               		.loc 1 112 0
+ 169 0090 8091 0000 		lds r24,ucCurrentOutputValue
+ 170 0094 8093 0B01 		sts 267,r24
+ 171               	/* epilogue start */
+ 113:ParTest/ParTest.c **** 		}
+ 114:ParTest/ParTest.c **** 		xTaskResumeAll();			
+ 115:ParTest/ParTest.c **** 	}
+ 116:ParTest/ParTest.c **** }
+ 172               		.loc 1 116 0
+ 173 0098 DF91      		pop r29
+ 174 009a CF91      		pop r28
+ 114:ParTest/ParTest.c **** 	}
+ 175               		.loc 1 114 0
+ 176 009c 0C94 0000 		jmp xTaskResumeAll
+ 177               	.LVL16:
+ 178               	.L8:
+ 179               	/* epilogue start */
+ 180               		.loc 1 116 0
+ 181 00a0 DF91      		pop r29
+ 182 00a2 CF91      		pop r28
+ 183 00a4 0895      		ret
+ 184               		.cfi_endproc
+ 185               	.LFE2:
+ 187               		.data
+ 190               	ucCurrentOutputValue:
+ 191 0000 FF        		.byte	-1
+ 192               		.text
+ 193               	.Letext0:
+ 194               		.file 2 "/home/link/avr8-gnu-toolchain/avr/include/stdint.h"
+ 195               		.file 3 "../../Source/include/../portable/GCC/ATMega323/portmacro.h"
+ 196               		.file 4 "../../Source/include/task.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 ParTest.c
+     /tmp/ccWnu9Ok.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccWnu9Ok.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccWnu9Ok.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccWnu9Ok.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccWnu9Ok.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccWnu9Ok.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccWnu9Ok.s:13     .text:0000000000000000 vParTestInitialise
+     /tmp/ccWnu9Ok.s:190    .data:0000000000000000 ucCurrentOutputValue
+     /tmp/ccWnu9Ok.s:36     .text:0000000000000012 vParTestSetLED
+     /tmp/ccWnu9Ok.s:117    .text:000000000000005c vParTestToggleLED
+
+UNDEFINED SYMBOLS
+vTaskSuspendAll
+xTaskResumeAll
+__do_copy_data

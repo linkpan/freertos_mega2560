@@ -1,0 +1,810 @@
+   1               		.file	"serial.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               	.global	xSerialPortInitMinimal
+  13               	xSerialPortInitMinimal:
+  14               	.LFB4:
+  15               		.file 1 "serial/serial.c"
+   1:serial/serial.c **** /*
+   2:serial/serial.c ****  * FreeRTOS Kernel V10.1.1
+   3:serial/serial.c ****  * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+   4:serial/serial.c ****  *
+   5:serial/serial.c ****  * Permission is hereby granted, free of charge, to any person obtaining a copy of
+   6:serial/serial.c ****  * this software and associated documentation files (the "Software"), to deal in
+   7:serial/serial.c ****  * the Software without restriction, including without limitation the rights to
+   8:serial/serial.c ****  * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+   9:serial/serial.c ****  * the Software, and to permit persons to whom the Software is furnished to do so,
+  10:serial/serial.c ****  * subject to the following conditions:
+  11:serial/serial.c ****  *
+  12:serial/serial.c ****  * The above copyright notice and this permission notice shall be included in all
+  13:serial/serial.c ****  * copies or substantial portions of the Software.
+  14:serial/serial.c ****  *
+  15:serial/serial.c ****  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  16:serial/serial.c ****  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+  17:serial/serial.c ****  * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+  18:serial/serial.c ****  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+  19:serial/serial.c ****  * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+  20:serial/serial.c ****  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  21:serial/serial.c ****  *
+  22:serial/serial.c ****  * http://www.FreeRTOS.org
+  23:serial/serial.c ****  * http://aws.amazon.com/freertos
+  24:serial/serial.c ****  *
+  25:serial/serial.c ****  * 1 tab == 4 spaces!
+  26:serial/serial.c ****  */
+  27:serial/serial.c **** 
+  28:serial/serial.c **** /*
+  29:serial/serial.c **** Changes from V1.2.3
+  30:serial/serial.c **** 
+  31:serial/serial.c **** 	+ The function xPortInitMinimal() has been renamed to 
+  32:serial/serial.c **** 	  xSerialPortInitMinimal() and the function xPortInit() has been renamed
+  33:serial/serial.c **** 	  to xSerialPortInit().
+  34:serial/serial.c **** 
+  35:serial/serial.c **** Changes from V2.0.0
+  36:serial/serial.c **** 
+  37:serial/serial.c **** 	+ Delay periods are now specified using variables and constants of
+  38:serial/serial.c **** 	  TickType_t rather than unsigned long.
+  39:serial/serial.c **** 	+ xQueueReceiveFromISR() used in place of xQueueReceive() within the ISR.
+  40:serial/serial.c **** 
+  41:serial/serial.c **** Changes from V2.6.0
+  42:serial/serial.c **** 
+  43:serial/serial.c **** 	+ Replaced the inb() and outb() functions with direct memory
+  44:serial/serial.c **** 	  access.  This allows the port to be built with the 20050414 build of
+  45:serial/serial.c **** 	  WinAVR.
+  46:serial/serial.c **** */
+  47:serial/serial.c **** 
+  48:serial/serial.c **** /* BASIC INTERRUPT DRIVEN SERIAL PORT DRIVER. */
+  49:serial/serial.c **** 
+  50:serial/serial.c **** 
+  51:serial/serial.c **** #include <stdlib.h>
+  52:serial/serial.c **** #include <avr/interrupt.h>
+  53:serial/serial.c **** #include "FreeRTOS.h"
+  54:serial/serial.c **** #include "queue.h"
+  55:serial/serial.c **** #include "task.h"
+  56:serial/serial.c **** #include "serial.h"
+  57:serial/serial.c **** 
+  58:serial/serial.c **** #define serBAUD_DIV_CONSTANT			( ( unsigned long ) 16 )
+  59:serial/serial.c **** 
+  60:serial/serial.c **** /* Constants for writing to UCSRB. */
+  61:serial/serial.c **** #define serRX_INT_ENABLE				( ( unsigned char ) 0x80 )
+  62:serial/serial.c **** #define serRX_ENABLE					( ( unsigned char ) 0x10 )
+  63:serial/serial.c **** #define serTX_ENABLE					( ( unsigned char ) 0x08 )
+  64:serial/serial.c **** #define serTX_INT_ENABLE				( ( unsigned char ) 0x20 )
+  65:serial/serial.c **** 
+  66:serial/serial.c **** /* Constants for writing to UCSRC. */
+  67:serial/serial.c **** #define serUCSRC_SELECT					( ( unsigned char ) 0x80 )
+  68:serial/serial.c **** #define serEIGHT_DATA_BITS				( ( unsigned char ) 0x06 )
+  69:serial/serial.c **** 
+  70:serial/serial.c **** static QueueHandle_t xRxedChars; 
+  71:serial/serial.c **** static QueueHandle_t xCharsForTx; 
+  72:serial/serial.c **** 
+  73:serial/serial.c **** #define vInterruptOn()										\
+  74:serial/serial.c **** {															\
+  75:serial/serial.c **** 	unsigned char ucByte;								\
+  76:serial/serial.c **** 															\
+  77:serial/serial.c **** 	ucByte = UCSR0B;											\
+  78:serial/serial.c **** 	ucByte |= serTX_INT_ENABLE;								\
+  79:serial/serial.c **** 	UCSR0B = ucByte;											\
+  80:serial/serial.c **** }																				
+  81:serial/serial.c **** /*-----------------------------------------------------------*/
+  82:serial/serial.c **** 
+  83:serial/serial.c **** #define vInterruptOff()										\
+  84:serial/serial.c **** {															\
+  85:serial/serial.c **** 	unsigned char ucInByte;								\
+  86:serial/serial.c **** 															\
+  87:serial/serial.c **** 	ucInByte = UCSR0B;										\
+  88:serial/serial.c **** 	ucInByte &= ~serTX_INT_ENABLE;							\
+  89:serial/serial.c **** 	UCSR0B = ucInByte;										\
+  90:serial/serial.c **** }
+  91:serial/serial.c **** /*-----------------------------------------------------------*/
+  92:serial/serial.c **** 
+  93:serial/serial.c **** xComPortHandle xSerialPortInitMinimal( unsigned long ulWantedBaud, portBASE_TYPE uxQueueLength )
+  94:serial/serial.c **** {
+  16               		.loc 1 94 0
+  17               		.cfi_startproc
+  18               	.LVL0:
+  19 0000 CF92      		push r12
+  20               	.LCFI0:
+  21               		.cfi_def_cfa_offset 4
+  22               		.cfi_offset 12, -3
+  23 0002 DF92      		push r13
+  24               	.LCFI1:
+  25               		.cfi_def_cfa_offset 5
+  26               		.cfi_offset 13, -4
+  27 0004 EF92      		push r14
+  28               	.LCFI2:
+  29               		.cfi_def_cfa_offset 6
+  30               		.cfi_offset 14, -5
+  31 0006 FF92      		push r15
+  32               	.LCFI3:
+  33               		.cfi_def_cfa_offset 7
+  34               		.cfi_offset 15, -6
+  35 0008 CF93      		push r28
+  36               	.LCFI4:
+  37               		.cfi_def_cfa_offset 8
+  38               		.cfi_offset 28, -7
+  39               	/* prologue: function */
+  40               	/* frame size = 0 */
+  41               	/* stack size = 5 */
+  42               	.L__stack_usage = 5
+  43 000a 6B01      		movw r12,r22
+  44 000c 7C01      		movw r14,r24
+  45 000e C42F      		mov r28,r20
+  95:serial/serial.c **** unsigned long ulBaudRateCounter;
+  96:serial/serial.c **** unsigned char ucByte;
+  97:serial/serial.c **** 
+  98:serial/serial.c **** 	portENTER_CRITICAL();
+  46               		.loc 1 98 0
+  47               	/* #APP */
+  48               	 ;  98 "serial/serial.c" 1
+  49 0010 0FB6      		in __tmp_reg__, __SREG__
+  50 0012 F894      		cli
+  51 0014 0F92      		push __tmp_reg__
+  52               		
+  53               	 ;  0 "" 2
+  99:serial/serial.c **** 	{
+ 100:serial/serial.c **** 		/* Create the queues used by the com test task. */
+ 101:serial/serial.c **** 		xRxedChars = xQueueCreate( uxQueueLength, ( portBASE_TYPE ) sizeof( signed char ) );
+  54               		.loc 1 101 0
+  55               	/* #NOAPP */
+  56 0016 40E0      		ldi r20,0
+  57               	.LVL1:
+  58 0018 61E0      		ldi r22,lo8(1)
+  59               	.LVL2:
+  60 001a 8C2F      		mov r24,r28
+  61 001c 0E94 0000 		call xQueueGenericCreate
+  62               	.LVL3:
+  63 0020 9093 0000 		sts xRxedChars+1,r25
+  64 0024 8093 0000 		sts xRxedChars,r24
+ 102:serial/serial.c **** 		xCharsForTx = xQueueCreate( uxQueueLength, ( portBASE_TYPE ) sizeof( signed char ) );
+  65               		.loc 1 102 0
+  66 0028 40E0      		ldi r20,0
+  67 002a 61E0      		ldi r22,lo8(1)
+  68 002c 8C2F      		mov r24,r28
+  69 002e 0E94 0000 		call xQueueGenericCreate
+  70               	.LVL4:
+  71 0032 9093 0000 		sts xCharsForTx+1,r25
+  72 0036 8093 0000 		sts xCharsForTx,r24
+ 103:serial/serial.c **** 
+ 104:serial/serial.c **** 		/* Calculate the baud rate register value from the equation in the
+ 105:serial/serial.c **** 		data sheet. */
+ 106:serial/serial.c **** 		ulBaudRateCounter = ( configCPU_CLOCK_HZ / ( serBAUD_DIV_CONSTANT * ulWantedBaud ) ) - ( unsigned
+  73               		.loc 1 106 0
+  74 003a A701      		movw r20,r14
+  75 003c 9601      		movw r18,r12
+  76 003e 84E0      		ldi r24,4
+  77               		1:
+  78 0040 220F      		lsl r18
+  79 0042 331F      		rol r19
+  80 0044 441F      		rol r20
+  81 0046 551F      		rol r21
+  82 0048 8A95      		dec r24
+  83 004a 01F4      		brne 1b
+  84 004c 60E0      		ldi r22,0
+  85 004e 74E2      		ldi r23,lo8(36)
+  86 0050 84EF      		ldi r24,lo8(-12)
+  87 0052 90E0      		ldi r25,0
+  88 0054 0E94 0000 		call __udivmodsi4
+  89 0058 BA01      		movw r22,r20
+  90 005a A901      		movw r20,r18
+  91 005c 4150      		subi r20,1
+  92 005e 5109      		sbc r21,__zero_reg__
+  93 0060 6109      		sbc r22,__zero_reg__
+  94 0062 7109      		sbc r23,__zero_reg__
+  95               	.LVL5:
+ 107:serial/serial.c **** 
+ 108:serial/serial.c **** 		/* Set the baud rate. */	
+ 109:serial/serial.c **** 		ucByte = ( unsigned char ) ( ulBaudRateCounter & ( unsigned long ) 0xff );	
+ 110:serial/serial.c **** 		UBRR0L = 8; //ucByte;
+  96               		.loc 1 110 0
+  97 0064 88E0      		ldi r24,lo8(8)
+  98 0066 8093 C400 		sts 196,r24
+  99               	.LVL6:
+ 111:serial/serial.c **** 
+ 112:serial/serial.c **** 		ulBaudRateCounter >>= ( unsigned long ) 8;
+ 113:serial/serial.c **** 		ucByte = ( unsigned char ) ( ulBaudRateCounter & ( unsigned long ) 0xff );	
+ 100               		.loc 1 113 0
+ 101 006a BB27      		clr r27
+ 102 006c A72F      		mov r26,r23
+ 103 006e 962F      		mov r25,r22
+ 104 0070 852F      		mov r24,r21
+ 105               	.LVL7:
+ 114:serial/serial.c **** 		UBRR0H = ucByte;
+ 106               		.loc 1 114 0
+ 107 0072 8093 C500 		sts 197,r24
+ 115:serial/serial.c **** 
+ 116:serial/serial.c **** 		/* Enable the Rx interrupt.  The Tx interrupt will get enabled
+ 117:serial/serial.c **** 		later. Also enable the Rx and Tx. */
+ 118:serial/serial.c **** 		UCSR0B = ( serRX_INT_ENABLE | serRX_ENABLE | serTX_ENABLE );
+ 108               		.loc 1 118 0
+ 109 0076 88E9      		ldi r24,lo8(-104)
+ 110               	.LVL8:
+ 111 0078 8093 C100 		sts 193,r24
+ 119:serial/serial.c **** 
+ 120:serial/serial.c **** 		/* Set the data bits to 8. */
+ 121:serial/serial.c **** 		UCSR0C = ( serUCSRC_SELECT | serEIGHT_DATA_BITS );
+ 112               		.loc 1 121 0
+ 113 007c 86E8      		ldi r24,lo8(-122)
+ 114 007e 8093 C200 		sts 194,r24
+ 122:serial/serial.c **** 	}
+ 123:serial/serial.c **** 	portEXIT_CRITICAL();
+ 115               		.loc 1 123 0
+ 116               	/* #APP */
+ 117               	 ;  123 "serial/serial.c" 1
+ 118 0082 0F90      		pop __tmp_reg__
+ 119 0084 0FBE      		out __SREG__, __tmp_reg__
+ 120               		
+ 121               	 ;  0 "" 2
+ 124:serial/serial.c **** 	
+ 125:serial/serial.c **** 	/* Unlike other ports, this serial code does not allow for more than one
+ 126:serial/serial.c **** 	com port.  We therefore don't return a pointer to a port structure and can
+ 127:serial/serial.c **** 	instead just return NULL. */
+ 128:serial/serial.c **** 	return NULL;
+ 129:serial/serial.c **** }
+ 122               		.loc 1 129 0
+ 123               	/* #NOAPP */
+ 124 0086 80E0      		ldi r24,0
+ 125 0088 90E0      		ldi r25,0
+ 126               	/* epilogue start */
+ 127 008a CF91      		pop r28
+ 128               	.LVL9:
+ 129 008c FF90      		pop r15
+ 130 008e EF90      		pop r14
+ 131 0090 DF90      		pop r13
+ 132 0092 CF90      		pop r12
+ 133               	.LVL10:
+ 134 0094 0895      		ret
+ 135               		.cfi_endproc
+ 136               	.LFE4:
+ 138               	.global	xSerialGetChar
+ 140               	xSerialGetChar:
+ 141               	.LFB5:
+ 130:serial/serial.c **** /*-----------------------------------------------------------*/
+ 131:serial/serial.c **** 
+ 132:serial/serial.c **** portBASE_TYPE xSerialGetChar( xComPortHandle pxPort, signed char *pcRxedChar, TickType_t xBlockTime
+ 133:serial/serial.c **** {
+ 142               		.loc 1 133 0
+ 143               		.cfi_startproc
+ 144               	.LVL11:
+ 145               	/* prologue: function */
+ 146               	/* frame size = 0 */
+ 147               	/* stack size = 0 */
+ 148               	.L__stack_usage = 0
+ 134:serial/serial.c **** 	/* Only one port is supported. */
+ 135:serial/serial.c **** 	( void ) pxPort;
+ 136:serial/serial.c **** 
+ 137:serial/serial.c **** 	/* Get the next character from the buffer.  Return false if no characters
+ 138:serial/serial.c **** 	are available, or arrive before xBlockTime expires. */
+ 139:serial/serial.c **** 	if( xQueueReceive( xRxedChars, pcRxedChar, xBlockTime ) )
+ 149               		.loc 1 139 0
+ 150 0096 8091 0000 		lds r24,xRxedChars
+ 151 009a 9091 0000 		lds r25,xRxedChars+1
+ 152               	.LVL12:
+ 153 009e 0E94 0000 		call xQueueReceive
+ 154               	.LVL13:
+ 155 00a2 91E0      		ldi r25,lo8(1)
+ 156 00a4 8111      		cpse r24,__zero_reg__
+ 157 00a6 00C0      		rjmp .L3
+ 158 00a8 90E0      		ldi r25,0
+ 159               	.L3:
+ 140:serial/serial.c **** 	{
+ 141:serial/serial.c **** 		return pdTRUE;
+ 142:serial/serial.c **** 	}
+ 143:serial/serial.c **** 	else
+ 144:serial/serial.c **** 	{
+ 145:serial/serial.c **** 		return pdFALSE;
+ 146:serial/serial.c **** 	}
+ 147:serial/serial.c **** }
+ 160               		.loc 1 147 0
+ 161 00aa 892F      		mov r24,r25
+ 162 00ac 0895      		ret
+ 163               		.cfi_endproc
+ 164               	.LFE5:
+ 166               	.global	xSerialPutChar
+ 168               	xSerialPutChar:
+ 169               	.LFB6:
+ 148:serial/serial.c **** /*-----------------------------------------------------------*/
+ 149:serial/serial.c **** 
+ 150:serial/serial.c **** portBASE_TYPE xSerialPutChar( xComPortHandle pxPort, signed char cOutChar, TickType_t xBlockTime )
+ 151:serial/serial.c **** {
+ 170               		.loc 1 151 0
+ 171               		.cfi_startproc
+ 172               	.LVL14:
+ 173 00ae CF93      		push r28
+ 174               	.LCFI5:
+ 175               		.cfi_def_cfa_offset 4
+ 176               		.cfi_offset 28, -3
+ 177 00b0 DF93      		push r29
+ 178               	.LCFI6:
+ 179               		.cfi_def_cfa_offset 5
+ 180               		.cfi_offset 29, -4
+ 181 00b2 1F92      		push __zero_reg__
+ 182               	.LCFI7:
+ 183               		.cfi_def_cfa_offset 6
+ 184 00b4 CDB7      		in r28,__SP_L__
+ 185 00b6 DEB7      		in r29,__SP_H__
+ 186               	.LCFI8:
+ 187               		.cfi_def_cfa_register 28
+ 188               	/* prologue: function */
+ 189               	/* frame size = 1 */
+ 190               	/* stack size = 3 */
+ 191               	.L__stack_usage = 3
+ 192 00b8 6983      		std Y+1,r22
+ 152:serial/serial.c **** 	/* Only one port is supported. */
+ 153:serial/serial.c **** 	( void ) pxPort;
+ 154:serial/serial.c **** 
+ 155:serial/serial.c **** 	/* Return false if after the block time there is no room on the Tx queue. */
+ 156:serial/serial.c **** 	if( xQueueSend( xCharsForTx, &cOutChar, xBlockTime ) != pdPASS )
+ 193               		.loc 1 156 0
+ 194 00ba 20E0      		ldi r18,0
+ 195 00bc BE01      		movw r22,r28
+ 196               	.LVL15:
+ 197 00be 6F5F      		subi r22,-1
+ 198 00c0 7F4F      		sbci r23,-1
+ 199 00c2 8091 0000 		lds r24,xCharsForTx
+ 200 00c6 9091 0000 		lds r25,xCharsForTx+1
+ 201               	.LVL16:
+ 202 00ca 0E94 0000 		call xQueueGenericSend
+ 203               	.LVL17:
+ 204 00ce 8130      		cpi r24,lo8(1)
+ 205 00d0 01F4      		brne .L7
+ 206               	.LBB2:
+ 157:serial/serial.c **** 	{
+ 158:serial/serial.c **** 		return pdFAIL;
+ 159:serial/serial.c **** 	}
+ 160:serial/serial.c **** 
+ 161:serial/serial.c **** 	vInterruptOn();
+ 207               		.loc 1 161 0
+ 208 00d2 8091 C100 		lds r24,193
+ 209               	.LVL18:
+ 210 00d6 8062      		ori r24,lo8(32)
+ 211               	.LVL19:
+ 212 00d8 8093 C100 		sts 193,r24
+ 213               	.LBE2:
+ 162:serial/serial.c **** 
+ 163:serial/serial.c **** 	return pdPASS;
+ 214               		.loc 1 163 0
+ 215 00dc 81E0      		ldi r24,lo8(1)
+ 216               	.LVL20:
+ 217 00de 00C0      		rjmp .L6
+ 218               	.LVL21:
+ 219               	.L7:
+ 158:serial/serial.c **** 	}
+ 220               		.loc 1 158 0
+ 221 00e0 80E0      		ldi r24,0
+ 222               	.L6:
+ 223               	/* epilogue start */
+ 164:serial/serial.c **** }
+ 224               		.loc 1 164 0
+ 225 00e2 0F90      		pop __tmp_reg__
+ 226 00e4 DF91      		pop r29
+ 227 00e6 CF91      		pop r28
+ 228               	.LVL22:
+ 229 00e8 0895      		ret
+ 230               		.cfi_endproc
+ 231               	.LFE6:
+ 233               	.global	vSerialClose
+ 235               	vSerialClose:
+ 236               	.LFB7:
+ 165:serial/serial.c **** /*-----------------------------------------------------------*/
+ 166:serial/serial.c **** 
+ 167:serial/serial.c **** void vSerialClose( xComPortHandle xPort )
+ 168:serial/serial.c **** {
+ 237               		.loc 1 168 0
+ 238               		.cfi_startproc
+ 239               	.LVL23:
+ 240               	/* prologue: function */
+ 241               	/* frame size = 0 */
+ 242               	/* stack size = 0 */
+ 243               	.L__stack_usage = 0
+ 169:serial/serial.c **** unsigned char ucByte;
+ 170:serial/serial.c **** 
+ 171:serial/serial.c **** 	/* The parameter is not used. */
+ 172:serial/serial.c **** 	( void ) xPort;
+ 173:serial/serial.c **** 
+ 174:serial/serial.c **** 	/* Turn off the interrupts.  We may also want to delete the queues and/or
+ 175:serial/serial.c **** 	re-install the original ISR. */
+ 176:serial/serial.c **** 
+ 177:serial/serial.c **** 	portENTER_CRITICAL();
+ 244               		.loc 1 177 0
+ 245               	/* #APP */
+ 246               	 ;  177 "serial/serial.c" 1
+ 247 00ea 0FB6      		in __tmp_reg__, __SREG__
+ 248 00ec F894      		cli
+ 249 00ee 0F92      		push __tmp_reg__
+ 250               		
+ 251               	 ;  0 "" 2
+ 252               	/* #NOAPP */
+ 253               	.LBB3:
+ 178:serial/serial.c **** 	{
+ 179:serial/serial.c **** 		vInterruptOff();
+ 254               		.loc 1 179 0
+ 255 00f0 E1EC      		ldi r30,lo8(-63)
+ 256 00f2 F0E0      		ldi r31,0
+ 257 00f4 8081      		ld r24,Z
+ 258               	.LVL24:
+ 259 00f6 8F7D      		andi r24,lo8(-33)
+ 260               	.LVL25:
+ 261 00f8 8083      		st Z,r24
+ 262               	.LBE3:
+ 180:serial/serial.c **** 		ucByte = UCSR0B;
+ 263               		.loc 1 180 0
+ 264 00fa 8081      		ld r24,Z
+ 265               	.LVL26:
+ 181:serial/serial.c **** 		ucByte &= ~serRX_INT_ENABLE;
+ 266               		.loc 1 181 0
+ 267 00fc 8F77      		andi r24,lo8(127)
+ 268               	.LVL27:
+ 182:serial/serial.c **** 		UCSR0B = ucByte;
+ 269               		.loc 1 182 0
+ 270 00fe 8083      		st Z,r24
+ 271               	.LVL28:
+ 183:serial/serial.c **** 	}
+ 184:serial/serial.c **** 	portEXIT_CRITICAL();
+ 272               		.loc 1 184 0
+ 273               	/* #APP */
+ 274               	 ;  184 "serial/serial.c" 1
+ 275 0100 0F90      		pop __tmp_reg__
+ 276 0102 0FBE      		out __SREG__, __tmp_reg__
+ 277               		
+ 278               	 ;  0 "" 2
+ 279               	/* #NOAPP */
+ 280 0104 0895      		ret
+ 281               		.cfi_endproc
+ 282               	.LFE7:
+ 284               	.global	__vector_25
+ 286               	__vector_25:
+ 287               	.LFB8:
+ 185:serial/serial.c **** }
+ 186:serial/serial.c **** /*-----------------------------------------------------------*/
+ 187:serial/serial.c **** 
+ 188:serial/serial.c **** SIGNAL( USART0_RX_vect )
+ 189:serial/serial.c **** {
+ 288               		.loc 1 189 0
+ 289               		.cfi_startproc
+ 290 0106 1F92      		push r1
+ 291               	.LCFI9:
+ 292               		.cfi_def_cfa_offset 4
+ 293               		.cfi_offset 1, -3
+ 294 0108 0F92      		push r0
+ 295               	.LCFI10:
+ 296               		.cfi_def_cfa_offset 5
+ 297               		.cfi_offset 0, -4
+ 298 010a 0FB6      		in r0,__SREG__
+ 299 010c 0F92      		push r0
+ 300 010e 1124      		clr __zero_reg__
+ 301 0110 0BB6      		in r0,__RAMPZ__
+ 302 0112 0F92      		push r0
+ 303 0114 2F93      		push r18
+ 304               	.LCFI11:
+ 305               		.cfi_def_cfa_offset 6
+ 306               		.cfi_offset 18, -5
+ 307 0116 3F93      		push r19
+ 308               	.LCFI12:
+ 309               		.cfi_def_cfa_offset 7
+ 310               		.cfi_offset 19, -6
+ 311 0118 4F93      		push r20
+ 312               	.LCFI13:
+ 313               		.cfi_def_cfa_offset 8
+ 314               		.cfi_offset 20, -7
+ 315 011a 5F93      		push r21
+ 316               	.LCFI14:
+ 317               		.cfi_def_cfa_offset 9
+ 318               		.cfi_offset 21, -8
+ 319 011c 6F93      		push r22
+ 320               	.LCFI15:
+ 321               		.cfi_def_cfa_offset 10
+ 322               		.cfi_offset 22, -9
+ 323 011e 7F93      		push r23
+ 324               	.LCFI16:
+ 325               		.cfi_def_cfa_offset 11
+ 326               		.cfi_offset 23, -10
+ 327 0120 8F93      		push r24
+ 328               	.LCFI17:
+ 329               		.cfi_def_cfa_offset 12
+ 330               		.cfi_offset 24, -11
+ 331 0122 9F93      		push r25
+ 332               	.LCFI18:
+ 333               		.cfi_def_cfa_offset 13
+ 334               		.cfi_offset 25, -12
+ 335 0124 AF93      		push r26
+ 336               	.LCFI19:
+ 337               		.cfi_def_cfa_offset 14
+ 338               		.cfi_offset 26, -13
+ 339 0126 BF93      		push r27
+ 340               	.LCFI20:
+ 341               		.cfi_def_cfa_offset 15
+ 342               		.cfi_offset 27, -14
+ 343 0128 EF93      		push r30
+ 344               	.LCFI21:
+ 345               		.cfi_def_cfa_offset 16
+ 346               		.cfi_offset 30, -15
+ 347 012a FF93      		push r31
+ 348               	.LCFI22:
+ 349               		.cfi_def_cfa_offset 17
+ 350               		.cfi_offset 31, -16
+ 351 012c CF93      		push r28
+ 352               	.LCFI23:
+ 353               		.cfi_def_cfa_offset 18
+ 354               		.cfi_offset 28, -17
+ 355 012e DF93      		push r29
+ 356               	.LCFI24:
+ 357               		.cfi_def_cfa_offset 19
+ 358               		.cfi_offset 29, -18
+ 359 0130 1F92      		push __zero_reg__
+ 360 0132 1F92      		push __zero_reg__
+ 361               	.LCFI25:
+ 362               		.cfi_def_cfa_offset 21
+ 363 0134 CDB7      		in r28,__SP_L__
+ 364 0136 DEB7      		in r29,__SP_H__
+ 365               	.LCFI26:
+ 366               		.cfi_def_cfa_register 28
+ 367               	/* prologue: Signal */
+ 368               	/* frame size = 2 */
+ 369               	/* stack size = 20 */
+ 370               	.L__stack_usage = 20
+ 190:serial/serial.c **** signed char cChar;
+ 191:serial/serial.c **** portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+ 371               		.loc 1 191 0
+ 372 0138 1982      		std Y+1,__zero_reg__
+ 192:serial/serial.c **** 
+ 193:serial/serial.c **** 	/* Get the character and post it on the queue of Rxed characters.
+ 194:serial/serial.c **** 	If the post causes a task to wake force a context switch as the woken task
+ 195:serial/serial.c **** 	may have a higher priority than the task we have interrupted. */
+ 196:serial/serial.c **** 	cChar = UDR0;
+ 373               		.loc 1 196 0
+ 374 013a 8091 C600 		lds r24,198
+ 375 013e 8A83      		std Y+2,r24
+ 197:serial/serial.c **** 
+ 198:serial/serial.c **** 	xQueueSendFromISR( xRxedChars, &cChar, &xHigherPriorityTaskWoken );
+ 376               		.loc 1 198 0
+ 377 0140 20E0      		ldi r18,0
+ 378 0142 AE01      		movw r20,r28
+ 379 0144 4F5F      		subi r20,-1
+ 380 0146 5F4F      		sbci r21,-1
+ 381 0148 BE01      		movw r22,r28
+ 382 014a 6E5F      		subi r22,-2
+ 383 014c 7F4F      		sbci r23,-1
+ 384 014e 8091 0000 		lds r24,xRxedChars
+ 385 0152 9091 0000 		lds r25,xRxedChars+1
+ 386 0156 0E94 0000 		call xQueueGenericSendFromISR
+ 387               	.LVL29:
+ 199:serial/serial.c **** 
+ 200:serial/serial.c **** 	if( xHigherPriorityTaskWoken != pdFALSE )
+ 388               		.loc 1 200 0
+ 389 015a 8981      		ldd r24,Y+1
+ 390 015c 8111      		cpse r24,__zero_reg__
+ 201:serial/serial.c **** 	{
+ 202:serial/serial.c **** 		taskYIELD();
+ 391               		.loc 1 202 0
+ 392 015e 0E94 0000 		call vPortYield
+ 393               	.LVL30:
+ 394               	.L9:
+ 395               	/* epilogue start */
+ 203:serial/serial.c **** 	}
+ 204:serial/serial.c **** }
+ 396               		.loc 1 204 0
+ 397 0162 0F90      		pop __tmp_reg__
+ 398 0164 0F90      		pop __tmp_reg__
+ 399 0166 DF91      		pop r29
+ 400 0168 CF91      		pop r28
+ 401 016a FF91      		pop r31
+ 402 016c EF91      		pop r30
+ 403 016e BF91      		pop r27
+ 404 0170 AF91      		pop r26
+ 405 0172 9F91      		pop r25
+ 406 0174 8F91      		pop r24
+ 407 0176 7F91      		pop r23
+ 408 0178 6F91      		pop r22
+ 409 017a 5F91      		pop r21
+ 410 017c 4F91      		pop r20
+ 411 017e 3F91      		pop r19
+ 412 0180 2F91      		pop r18
+ 413 0182 0F90      		pop r0
+ 414 0184 0BBE      		out __RAMPZ__,r0
+ 415 0186 0F90      		pop r0
+ 416 0188 0FBE      		out __SREG__,r0
+ 417 018a 0F90      		pop r0
+ 418 018c 1F90      		pop r1
+ 419 018e 1895      		reti
+ 420               		.cfi_endproc
+ 421               	.LFE8:
+ 423               	.global	__vector_26
+ 425               	__vector_26:
+ 426               	.LFB9:
+ 205:serial/serial.c **** /*-----------------------------------------------------------*/
+ 206:serial/serial.c **** 
+ 207:serial/serial.c **** SIGNAL( USART0_UDRE_vect )
+ 208:serial/serial.c **** {
+ 427               		.loc 1 208 0
+ 428               		.cfi_startproc
+ 429 0190 1F92      		push r1
+ 430               	.LCFI27:
+ 431               		.cfi_def_cfa_offset 4
+ 432               		.cfi_offset 1, -3
+ 433 0192 0F92      		push r0
+ 434               	.LCFI28:
+ 435               		.cfi_def_cfa_offset 5
+ 436               		.cfi_offset 0, -4
+ 437 0194 0FB6      		in r0,__SREG__
+ 438 0196 0F92      		push r0
+ 439 0198 1124      		clr __zero_reg__
+ 440 019a 0BB6      		in r0,__RAMPZ__
+ 441 019c 0F92      		push r0
+ 442 019e 2F93      		push r18
+ 443               	.LCFI29:
+ 444               		.cfi_def_cfa_offset 6
+ 445               		.cfi_offset 18, -5
+ 446 01a0 3F93      		push r19
+ 447               	.LCFI30:
+ 448               		.cfi_def_cfa_offset 7
+ 449               		.cfi_offset 19, -6
+ 450 01a2 4F93      		push r20
+ 451               	.LCFI31:
+ 452               		.cfi_def_cfa_offset 8
+ 453               		.cfi_offset 20, -7
+ 454 01a4 5F93      		push r21
+ 455               	.LCFI32:
+ 456               		.cfi_def_cfa_offset 9
+ 457               		.cfi_offset 21, -8
+ 458 01a6 6F93      		push r22
+ 459               	.LCFI33:
+ 460               		.cfi_def_cfa_offset 10
+ 461               		.cfi_offset 22, -9
+ 462 01a8 7F93      		push r23
+ 463               	.LCFI34:
+ 464               		.cfi_def_cfa_offset 11
+ 465               		.cfi_offset 23, -10
+ 466 01aa 8F93      		push r24
+ 467               	.LCFI35:
+ 468               		.cfi_def_cfa_offset 12
+ 469               		.cfi_offset 24, -11
+ 470 01ac 9F93      		push r25
+ 471               	.LCFI36:
+ 472               		.cfi_def_cfa_offset 13
+ 473               		.cfi_offset 25, -12
+ 474 01ae AF93      		push r26
+ 475               	.LCFI37:
+ 476               		.cfi_def_cfa_offset 14
+ 477               		.cfi_offset 26, -13
+ 478 01b0 BF93      		push r27
+ 479               	.LCFI38:
+ 480               		.cfi_def_cfa_offset 15
+ 481               		.cfi_offset 27, -14
+ 482 01b2 EF93      		push r30
+ 483               	.LCFI39:
+ 484               		.cfi_def_cfa_offset 16
+ 485               		.cfi_offset 30, -15
+ 486 01b4 FF93      		push r31
+ 487               	.LCFI40:
+ 488               		.cfi_def_cfa_offset 17
+ 489               		.cfi_offset 31, -16
+ 490 01b6 CF93      		push r28
+ 491               	.LCFI41:
+ 492               		.cfi_def_cfa_offset 18
+ 493               		.cfi_offset 28, -17
+ 494 01b8 DF93      		push r29
+ 495               	.LCFI42:
+ 496               		.cfi_def_cfa_offset 19
+ 497               		.cfi_offset 29, -18
+ 498 01ba 1F92      		push __zero_reg__
+ 499 01bc 1F92      		push __zero_reg__
+ 500               	.LCFI43:
+ 501               		.cfi_def_cfa_offset 21
+ 502 01be CDB7      		in r28,__SP_L__
+ 503 01c0 DEB7      		in r29,__SP_H__
+ 504               	.LCFI44:
+ 505               		.cfi_def_cfa_register 28
+ 506               	/* prologue: Signal */
+ 507               	/* frame size = 2 */
+ 508               	/* stack size = 20 */
+ 509               	.L__stack_usage = 20
+ 209:serial/serial.c **** signed char cChar, cTaskWoken;
+ 210:serial/serial.c **** 
+ 211:serial/serial.c **** 	if( xQueueReceiveFromISR( xCharsForTx, &cChar, &cTaskWoken ) == pdTRUE )
+ 510               		.loc 1 211 0
+ 511 01c2 AE01      		movw r20,r28
+ 512 01c4 4F5F      		subi r20,-1
+ 513 01c6 5F4F      		sbci r21,-1
+ 514 01c8 BE01      		movw r22,r28
+ 515 01ca 6E5F      		subi r22,-2
+ 516 01cc 7F4F      		sbci r23,-1
+ 517 01ce 8091 0000 		lds r24,xCharsForTx
+ 518 01d2 9091 0000 		lds r25,xCharsForTx+1
+ 519 01d6 0E94 0000 		call xQueueReceiveFromISR
+ 520               	.LVL31:
+ 521 01da 8130      		cpi r24,lo8(1)
+ 522 01dc 01F4      		brne .L15
+ 212:serial/serial.c **** 	{
+ 213:serial/serial.c **** 		/* Send the next character queued for Tx. */
+ 214:serial/serial.c **** 		UDR0 = cChar;
+ 523               		.loc 1 214 0
+ 524 01de 8A81      		ldd r24,Y+2
+ 525 01e0 8093 C600 		sts 198,r24
+ 526 01e4 00C0      		rjmp .L14
+ 527               	.L15:
+ 528               	.LBB4:
+ 215:serial/serial.c **** 	}
+ 216:serial/serial.c **** 	else
+ 217:serial/serial.c **** 	{
+ 218:serial/serial.c **** 		/* Queue empty, nothing to send. */
+ 219:serial/serial.c **** 		vInterruptOff();
+ 529               		.loc 1 219 0
+ 530 01e6 8091 C100 		lds r24,193
+ 531               	.LVL32:
+ 532 01ea 8F7D      		andi r24,lo8(-33)
+ 533               	.LVL33:
+ 534 01ec 8093 C100 		sts 193,r24
+ 535               	.LVL34:
+ 536               	.L14:
+ 537               	/* epilogue start */
+ 538               	.LBE4:
+ 220:serial/serial.c **** 	}
+ 221:serial/serial.c **** }
+ 539               		.loc 1 221 0
+ 540 01f0 0F90      		pop __tmp_reg__
+ 541 01f2 0F90      		pop __tmp_reg__
+ 542 01f4 DF91      		pop r29
+ 543 01f6 CF91      		pop r28
+ 544 01f8 FF91      		pop r31
+ 545 01fa EF91      		pop r30
+ 546 01fc BF91      		pop r27
+ 547 01fe AF91      		pop r26
+ 548 0200 9F91      		pop r25
+ 549 0202 8F91      		pop r24
+ 550 0204 7F91      		pop r23
+ 551 0206 6F91      		pop r22
+ 552 0208 5F91      		pop r21
+ 553 020a 4F91      		pop r20
+ 554 020c 3F91      		pop r19
+ 555 020e 2F91      		pop r18
+ 556 0210 0F90      		pop r0
+ 557 0212 0BBE      		out __RAMPZ__,r0
+ 558 0214 0F90      		pop r0
+ 559 0216 0FBE      		out __SREG__,r0
+ 560 0218 0F90      		pop r0
+ 561 021a 1F90      		pop r1
+ 562 021c 1895      		reti
+ 563               		.cfi_endproc
+ 564               	.LFE9:
+ 566               		.local	xCharsForTx
+ 567               		.comm	xCharsForTx,2,1
+ 568               		.local	xRxedChars
+ 569               		.comm	xRxedChars,2,1
+ 570               	.Letext0:
+ 571               		.file 2 "/home/link/avr8-gnu-toolchain/avr/include/stdint.h"
+ 572               		.file 3 "../../Source/include/../portable/GCC/ATMega323/portmacro.h"
+ 573               		.file 4 "../../Source/include/queue.h"
+ 574               		.file 5 "../Common/include/serial.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 serial.c
+     /tmp/ccN8nGwS.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccN8nGwS.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccN8nGwS.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccN8nGwS.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccN8nGwS.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccN8nGwS.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccN8nGwS.s:13     .text:0000000000000000 xSerialPortInitMinimal
+     /tmp/ccN8nGwS.s:567    .bss:0000000000000002 xRxedChars
+                             .bss:0000000000000000 xCharsForTx
+     /tmp/ccN8nGwS.s:140    .text:0000000000000096 xSerialGetChar
+     /tmp/ccN8nGwS.s:168    .text:00000000000000ae xSerialPutChar
+     /tmp/ccN8nGwS.s:235    .text:00000000000000ea vSerialClose
+     /tmp/ccN8nGwS.s:286    .text:0000000000000106 __vector_25
+     /tmp/ccN8nGwS.s:425    .text:0000000000000190 __vector_26
+
+UNDEFINED SYMBOLS
+xQueueGenericCreate
+__udivmodsi4
+xQueueReceive
+xQueueGenericSend
+xQueueGenericSendFromISR
+vPortYield
+xQueueReceiveFromISR
+__do_clear_bss

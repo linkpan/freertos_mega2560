@@ -1,0 +1,547 @@
+   1               		.file	"main.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  12               	vErrorChecks:
+  13               	.LFB5:
+  14               		.file 1 "main.c"
+   1:main.c        **** /*
+   2:main.c        ****  * FreeRTOS Kernel V10.1.1
+   3:main.c        ****  * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+   4:main.c        ****  *
+   5:main.c        ****  * Permission is hereby granted, free of charge, to any person obtaining a copy of
+   6:main.c        ****  * this software and associated documentation files (the "Software"), to deal in
+   7:main.c        ****  * the Software without restriction, including without limitation the rights to
+   8:main.c        ****  * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+   9:main.c        ****  * the Software, and to permit persons to whom the Software is furnished to do so,
+  10:main.c        ****  * subject to the following conditions:
+  11:main.c        ****  *
+  12:main.c        ****  * The above copyright notice and this permission notice shall be included in all
+  13:main.c        ****  * copies or substantial portions of the Software.
+  14:main.c        ****  *
+  15:main.c        ****  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  16:main.c        ****  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+  17:main.c        ****  * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+  18:main.c        ****  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+  19:main.c        ****  * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+  20:main.c        ****  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  21:main.c        ****  *
+  22:main.c        ****  * http://www.FreeRTOS.org
+  23:main.c        ****  * http://aws.amazon.com/freertos
+  24:main.c        ****  *
+  25:main.c        ****  * 1 tab == 4 spaces!
+  26:main.c        ****  */
+  27:main.c        **** 
+  28:main.c        **** /*
+  29:main.c        ****  * Creates all the demo application tasks, then starts the scheduler.  The WEB
+  30:main.c        ****  * documentation provides more details of the demo application tasks.
+  31:main.c        ****  *
+  32:main.c        ****  * Main. c also creates a task called "Check".  This only executes every three
+  33:main.c        ****  * seconds but has the highest priority so is guaranteed to get processor time.
+  34:main.c        ****  * Its main function is to check that all the other tasks are still operational.
+  35:main.c        ****  * Each task that does not flash an LED maintains a unique count that is
+  36:main.c        ****  * incremented each time the task successfully completes its function.  Should
+  37:main.c        ****  * any error occur within such a task the count is permanently halted.  The
+  38:main.c        ****  * check task inspects the count of each task to ensure it has changed since
+  39:main.c        ****  * the last time the check task executed.  If all the count variables have
+  40:main.c        ****  * changed all the tasks are still executing error free, and the check task
+  41:main.c        ****  * toggles an LED.  Should any task contain an error at any time the LED toggle
+  42:main.c        ****  * will stop.
+  43:main.c        ****  *
+  44:main.c        ****  * The LED flash and communications test tasks do not maintain a count.
+  45:main.c        ****  */
+  46:main.c        **** 
+  47:main.c        **** /*
+  48:main.c        **** Changes from V1.2.0
+  49:main.c        **** 
+  50:main.c        **** 	+ Changed the baud rate for the serial test from 19200 to 57600.
+  51:main.c        **** 
+  52:main.c        **** Changes from V1.2.3
+  53:main.c        **** 
+  54:main.c        **** 	+ The integer and comtest tasks are now used when the cooperative scheduler
+  55:main.c        **** 	  is being used.  Previously they were only used with the preemptive
+  56:main.c        **** 	  scheduler.
+  57:main.c        **** 
+  58:main.c        **** Changes from V1.2.5
+  59:main.c        **** 
+  60:main.c        **** 	+ Set the baud rate to 38400.  This has a smaller error percentage with an
+  61:main.c        **** 	  8MHz clock (according to the manual).
+  62:main.c        **** 
+  63:main.c        **** Changes from V2.0.0
+  64:main.c        **** 
+  65:main.c        **** 	+ Delay periods are now specified using variables and constants of
+  66:main.c        **** 	  TickType_t rather than unsigned long.
+  67:main.c        **** 
+  68:main.c        **** Changes from V2.6.1
+  69:main.c        **** 
+  70:main.c        **** 	+ The IAR and WinAVR AVR ports are now maintained separately.
+  71:main.c        **** 
+  72:main.c        **** Changes from V4.0.5
+  73:main.c        **** 
+  74:main.c        **** 	+ Modified to demonstrate the use of co-routines.
+  75:main.c        **** 
+  76:main.c        **** */
+  77:main.c        **** 
+  78:main.c        **** #include <stdlib.h>
+  79:main.c        **** #include <string.h>
+  80:main.c        **** 
+  81:main.c        **** #ifdef GCC_MEGA_AVR
+  82:main.c        **** 	/* EEPROM routines used only with the WinAVR compiler. */
+  83:main.c        **** 	#include <avr/eeprom.h>
+  84:main.c        **** #endif
+  85:main.c        **** 
+  86:main.c        **** /* Scheduler include files. */
+  87:main.c        **** #include "FreeRTOS.h"
+  88:main.c        **** #include "task.h"
+  89:main.c        **** #include "croutine.h"
+  90:main.c        **** 
+  91:main.c        **** /* Demo file headers. */
+  92:main.c        **** #include "PollQ.h"
+  93:main.c        **** #include "integer.h"
+  94:main.c        **** #include "serial.h"
+  95:main.c        **** #include "comtest.h"
+  96:main.c        **** #include "crflash.h"
+  97:main.c        **** #include "print.h"
+  98:main.c        **** #include "partest.h"
+  99:main.c        **** #include "regtest.h"
+ 100:main.c        **** 
+ 101:main.c        **** /* Priority definitions for most of the tasks in the demo application.  Some
+ 102:main.c        **** tasks just use the idle priority. */
+ 103:main.c        **** #define mainLED_TASK_PRIORITY			( tskIDLE_PRIORITY + 1 )
+ 104:main.c        **** #define mainCOM_TEST_PRIORITY			( tskIDLE_PRIORITY + 2 )
+ 105:main.c        **** #define mainQUEUE_POLL_PRIORITY			( tskIDLE_PRIORITY + 2 )
+ 106:main.c        **** #define mainCHECK_TASK_PRIORITY			( tskIDLE_PRIORITY + 3 )
+ 107:main.c        **** 
+ 108:main.c        **** /* Baud rate used by the serial port tasks. */
+ 109:main.c        **** #define mainCOM_TEST_BAUD_RATE			( ( unsigned long ) 115200 )
+ 110:main.c        **** 
+ 111:main.c        **** /* LED used by the serial port tasks.  This is toggled on each character Tx,
+ 112:main.c        **** and mainCOM_TEST_LED + 1 is toggles on each character Rx. */
+ 113:main.c        **** #define mainCOM_TEST_LED				( 4 )
+ 114:main.c        **** 
+ 115:main.c        **** /* LED that is toggled by the check task.  The check task periodically checks
+ 116:main.c        **** that all the other tasks are operating without error.  If no errors are found
+ 117:main.c        **** the LED is toggled.  If an error is found at any time the LED is never toggles
+ 118:main.c        **** again. */
+ 119:main.c        **** #define mainCHECK_TASK_LED				( 7 )
+ 120:main.c        **** 
+ 121:main.c        **** /* The period between executions of the check task. */
+ 122:main.c        **** #define mainCHECK_PERIOD				( ( TickType_t ) 3000 / portTICK_PERIOD_MS  )
+ 123:main.c        **** 
+ 124:main.c        **** /* An address in the EEPROM used to count resets.  This is used to check that
+ 125:main.c        **** the demo application is not unexpectedly resetting. */
+ 126:main.c        **** #define mainRESET_COUNT_ADDRESS			( ( void * ) 0x50 )
+ 127:main.c        **** 
+ 128:main.c        **** /* The number of coroutines to create. */
+ 129:main.c        **** #define mainNUM_FLASH_COROUTINES		( 3 )
+ 130:main.c        **** 
+ 131:main.c        **** /*
+ 132:main.c        ****  * The task function for the "Check" task.
+ 133:main.c        ****  */
+ 134:main.c        **** static void vErrorChecks( void *pvParameters );
+ 135:main.c        **** 
+ 136:main.c        **** /*
+ 137:main.c        ****  * Checks the unique counts of other tasks to ensure they are still operational.
+ 138:main.c        ****  * Flashes an LED if everything is okay.
+ 139:main.c        ****  */
+ 140:main.c        **** static void prvCheckOtherTasksAreStillRunning( void );
+ 141:main.c        **** 
+ 142:main.c        **** /*
+ 143:main.c        ****  * Called on boot to increment a count stored in the EEPROM.  This is used to
+ 144:main.c        ****  * ensure the CPU does not reset unexpectedly.
+ 145:main.c        ****  */
+ 146:main.c        **** static void prvIncrementResetCount( void );
+ 147:main.c        **** 
+ 148:main.c        **** /*
+ 149:main.c        ****  * The idle hook is used to scheduler co-routines.
+ 150:main.c        ****  */
+ 151:main.c        **** void vApplicationIdleHook( void );
+ 152:main.c        **** 
+ 153:main.c        **** /*-----------------------------------------------------------*/
+ 154:main.c        **** 
+ 155:main.c        **** short main( void )
+ 156:main.c        **** {
+ 157:main.c        **** 	prvIncrementResetCount();
+ 158:main.c        **** 
+ 159:main.c        **** 	/* Setup the LED's for output. */
+ 160:main.c        **** 	vParTestInitialise();
+ 161:main.c        **** 
+ 162:main.c        **** 	/* Create the standard demo tasks. */
+ 163:main.c        **** 	vStartIntegerMathTasks( tskIDLE_PRIORITY );
+ 164:main.c        **** 	vAltStartComTestTasks( mainCOM_TEST_PRIORITY, mainCOM_TEST_BAUD_RATE, mainCOM_TEST_LED );
+ 165:main.c        **** 	vStartPolledQueueTasks( mainQUEUE_POLL_PRIORITY );
+ 166:main.c        **** 	vStartRegTestTasks();
+ 167:main.c        **** 
+ 168:main.c        **** 	/* Create the tasks defined within this file. */
+ 169:main.c        **** 	xTaskCreate( vErrorChecks, "Check", configMINIMAL_STACK_SIZE, NULL, mainCHECK_TASK_PRIORITY, NULL 
+ 170:main.c        **** 
+ 171:main.c        **** 	/* Create the co-routines that flash the LED's. */
+ 172:main.c        **** 	vStartFlashCoRoutines( mainNUM_FLASH_COROUTINES );
+ 173:main.c        **** 
+ 174:main.c        **** 	/* In this port, to use preemptive scheduler define configUSE_PREEMPTION
+ 175:main.c        **** 	as 1 in portmacro.h.  To use the cooperative scheduler define
+ 176:main.c        **** 	configUSE_PREEMPTION as 0. */
+ 177:main.c        **** 	vTaskStartScheduler();
+ 178:main.c        **** 
+ 179:main.c        **** 	return 0;
+ 180:main.c        **** }
+ 181:main.c        **** /*-----------------------------------------------------------*/
+ 182:main.c        **** 
+ 183:main.c        **** static void vErrorChecks( void *pvParameters )
+ 184:main.c        **** {
+  15               		.loc 1 184 0
+  16               		.cfi_startproc
+  17               	.LVL0:
+  18               	/* prologue: function */
+  19               	/* frame size = 0 */
+  20               	/* stack size = 0 */
+  21               	.L__stack_usage = 0
+  22               	.LBB4:
+  23               	.LBB5:
+ 185:main.c        **** static volatile unsigned long ulDummyVariable = 3UL;
+ 186:main.c        **** 
+ 187:main.c        **** 	/* The parameters are not used. */
+ 188:main.c        **** 	( void ) pvParameters;
+ 189:main.c        **** 
+ 190:main.c        **** 	/* Cycle for ever, delaying then checking all the other tasks are still
+ 191:main.c        **** 	operating without error. */
+ 192:main.c        **** 	for( ;; )
+ 193:main.c        **** 	{
+ 194:main.c        **** 		vTaskDelay( mainCHECK_PERIOD );
+ 195:main.c        **** 
+ 196:main.c        **** 		/* Perform a bit of 32bit maths to ensure the registers used by the
+ 197:main.c        **** 		integer tasks get some exercise. The result here is not important -
+ 198:main.c        **** 		see the demo application documentation for more info. */
+ 199:main.c        **** 		ulDummyVariable *= 3;
+ 200:main.c        **** 
+ 201:main.c        **** 		prvCheckOtherTasksAreStillRunning();
+ 202:main.c        **** 	}
+ 203:main.c        **** }
+ 204:main.c        **** /*-----------------------------------------------------------*/
+ 205:main.c        **** 
+ 206:main.c        **** static void prvCheckOtherTasksAreStillRunning( void )
+ 207:main.c        **** {
+ 208:main.c        **** static portBASE_TYPE xErrorHasOccurred = pdFALSE;
+ 209:main.c        **** 
+ 210:main.c        **** 	if( xAreIntegerMathsTaskStillRunning() != pdTRUE )
+ 211:main.c        **** 	{
+ 212:main.c        **** 		xErrorHasOccurred = pdTRUE;
+  24               		.loc 1 212 0
+  25 0000 C1E0      		ldi r28,lo8(1)
+  26               	.LVL1:
+  27               	.L6:
+  28               	.LBE5:
+  29               	.LBE4:
+ 194:main.c        **** 
+  30               		.loc 1 194 0 discriminator 1
+  31 0002 88EB      		ldi r24,lo8(-72)
+  32 0004 9BE0      		ldi r25,lo8(11)
+  33 0006 0E94 0000 		call vTaskDelay
+  34               	.LVL2:
+ 199:main.c        **** 
+  35               		.loc 1 199 0 discriminator 1
+  36 000a 2091 0000 		lds r18,ulDummyVariable.2398
+  37 000e 3091 0000 		lds r19,ulDummyVariable.2398+1
+  38 0012 4091 0000 		lds r20,ulDummyVariable.2398+2
+  39 0016 5091 0000 		lds r21,ulDummyVariable.2398+3
+  40 001a A3E0      		ldi r26,lo8(3)
+  41 001c B0E0      		ldi r27,0
+  42 001e 0E94 0000 		call __muluhisi3
+  43 0022 6093 0000 		sts ulDummyVariable.2398,r22
+  44 0026 7093 0000 		sts ulDummyVariable.2398+1,r23
+  45 002a 8093 0000 		sts ulDummyVariable.2398+2,r24
+  46 002e 9093 0000 		sts ulDummyVariable.2398+3,r25
+  47               	.LBB7:
+  48               	.LBB6:
+ 210:main.c        **** 	{
+  49               		.loc 1 210 0 discriminator 1
+  50 0032 0E94 0000 		call xAreIntegerMathsTaskStillRunning
+  51               	.LVL3:
+  52 0036 8130      		cpi r24,lo8(1)
+  53 0038 01F0      		breq .L2
+  54               		.loc 1 212 0
+  55 003a C093 0000 		sts xErrorHasOccurred.2403,r28
+  56               	.L2:
+ 213:main.c        **** 	}
+ 214:main.c        **** 
+ 215:main.c        **** 	if( xAreComTestTasksStillRunning() != pdTRUE )
+  57               		.loc 1 215 0
+  58 003e 0E94 0000 		call xAreComTestTasksStillRunning
+  59               	.LVL4:
+  60 0042 8130      		cpi r24,lo8(1)
+  61 0044 01F0      		breq .L3
+ 216:main.c        **** 	{
+ 217:main.c        **** 		xErrorHasOccurred = pdTRUE;
+  62               		.loc 1 217 0
+  63 0046 C093 0000 		sts xErrorHasOccurred.2403,r28
+  64               	.L3:
+ 218:main.c        **** 	}
+ 219:main.c        **** 
+ 220:main.c        **** 	if( xArePollingQueuesStillRunning() != pdTRUE )
+  65               		.loc 1 220 0
+  66 004a 0E94 0000 		call xArePollingQueuesStillRunning
+  67               	.LVL5:
+  68 004e 8130      		cpi r24,lo8(1)
+  69 0050 01F0      		breq .L4
+ 221:main.c        **** 	{
+ 222:main.c        **** 		xErrorHasOccurred = pdTRUE;
+  70               		.loc 1 222 0
+  71 0052 C093 0000 		sts xErrorHasOccurred.2403,r28
+  72               	.L4:
+ 223:main.c        **** 	}
+ 224:main.c        **** 
+ 225:main.c        **** 	if( xAreRegTestTasksStillRunning() != pdTRUE )
+  73               		.loc 1 225 0
+  74 0056 0E94 0000 		call xAreRegTestTasksStillRunning
+  75               	.LVL6:
+  76 005a 8130      		cpi r24,lo8(1)
+  77 005c 01F0      		breq .L5
+ 226:main.c        **** 	{
+ 227:main.c        **** 		xErrorHasOccurred = pdTRUE;
+  78               		.loc 1 227 0
+  79 005e C093 0000 		sts xErrorHasOccurred.2403,r28
+  80               	.L5:
+ 228:main.c        **** 	}
+ 229:main.c        **** 
+ 230:main.c        **** 	if( xErrorHasOccurred == pdFALSE )
+  81               		.loc 1 230 0
+  82 0062 8091 0000 		lds r24,xErrorHasOccurred.2403
+  83 0066 8111      		cpse r24,__zero_reg__
+  84 0068 00C0      		rjmp .L6
+ 231:main.c        **** 	{
+ 232:main.c        **** 		/* Toggle the LED if everything is okay so we know if an error occurs even if not
+ 233:main.c        **** 		using console IO. */
+ 234:main.c        **** 		vParTestToggleLED( mainCHECK_TASK_LED );
+  85               		.loc 1 234 0
+  86 006a 87E0      		ldi r24,lo8(7)
+  87 006c 0E94 0000 		call vParTestToggleLED
+  88               	.LVL7:
+  89 0070 00C0      		rjmp .L6
+  90               	.LBE6:
+  91               	.LBE7:
+  92               		.cfi_endproc
+  93               	.LFE5:
+  95               		.section	.rodata.str1.1,"aMS",@progbits,1
+  96               	.LC0:
+  97 0000 4368 6563 		.string	"Check"
+  97      6B00 
+  98               		.section	.text.startup,"ax",@progbits
+  99               	.global	main
+ 101               	main:
+ 102               	.LFB4:
+ 156:main.c        **** 	prvIncrementResetCount();
+ 103               		.loc 1 156 0
+ 104               		.cfi_startproc
+ 105 0000 EF92      		push r14
+ 106               	.LCFI0:
+ 107               		.cfi_def_cfa_offset 4
+ 108               		.cfi_offset 14, -3
+ 109 0002 FF92      		push r15
+ 110               	.LCFI1:
+ 111               		.cfi_def_cfa_offset 5
+ 112               		.cfi_offset 15, -4
+ 113 0004 0F93      		push r16
+ 114               	.LCFI2:
+ 115               		.cfi_def_cfa_offset 6
+ 116               		.cfi_offset 16, -5
+ 117 0006 CF93      		push r28
+ 118               	.LCFI3:
+ 119               		.cfi_def_cfa_offset 7
+ 120               		.cfi_offset 28, -6
+ 121 0008 DF93      		push r29
+ 122               	.LCFI4:
+ 123               		.cfi_def_cfa_offset 8
+ 124               		.cfi_offset 29, -7
+ 125 000a 1F92      		push __zero_reg__
+ 126               	.LCFI5:
+ 127               		.cfi_def_cfa_offset 9
+ 128 000c CDB7      		in r28,__SP_L__
+ 129 000e DEB7      		in r29,__SP_H__
+ 130               	.LCFI6:
+ 131               		.cfi_def_cfa_register 28
+ 132               	/* prologue: function */
+ 133               	/* frame size = 1 */
+ 134               	/* stack size = 6 */
+ 135               	.L__stack_usage = 6
+ 136               	.LBB10:
+ 137               	.LBB11:
+ 235:main.c        **** 	}
+ 236:main.c        **** }
+ 237:main.c        **** /*-----------------------------------------------------------*/
+ 238:main.c        **** 
+ 239:main.c        **** static void prvIncrementResetCount( void )
+ 240:main.c        **** {
+ 241:main.c        **** unsigned char ucCount;
+ 242:main.c        **** 
+ 243:main.c        **** 	eeprom_read_block( &ucCount, mainRESET_COUNT_ADDRESS, sizeof( ucCount ) );
+ 138               		.loc 1 243 0
+ 139 0010 41E0      		ldi r20,lo8(1)
+ 140 0012 50E0      		ldi r21,0
+ 141 0014 60E5      		ldi r22,lo8(80)
+ 142 0016 70E0      		ldi r23,0
+ 143 0018 CE01      		movw r24,r28
+ 144 001a 0196      		adiw r24,1
+ 145 001c 0E94 0000 		call eeprom_read_block
+ 146               	.LVL8:
+ 244:main.c        **** 	ucCount++;
+ 147               		.loc 1 244 0
+ 148 0020 6981      		ldd r22,Y+1
+ 149 0022 6F5F      		subi r22,lo8(-(1))
+ 150 0024 6983      		std Y+1,r22
+ 245:main.c        **** 	eeprom_write_byte( mainRESET_COUNT_ADDRESS, ucCount );
+ 151               		.loc 1 245 0
+ 152 0026 80E5      		ldi r24,lo8(80)
+ 153 0028 90E0      		ldi r25,0
+ 154 002a 0E94 0000 		call eeprom_write_byte
+ 155               	.LVL9:
+ 156               	.LBE11:
+ 157               	.LBE10:
+ 160:main.c        **** 
+ 158               		.loc 1 160 0
+ 159 002e 0E94 0000 		call vParTestInitialise
+ 160               	.LVL10:
+ 163:main.c        **** 	vAltStartComTestTasks( mainCOM_TEST_PRIORITY, mainCOM_TEST_BAUD_RATE, mainCOM_TEST_LED );
+ 161               		.loc 1 163 0
+ 162 0032 80E0      		ldi r24,0
+ 163 0034 0E94 0000 		call vStartIntegerMathTasks
+ 164               	.LVL11:
+ 164:main.c        **** 	vStartPolledQueueTasks( mainQUEUE_POLL_PRIORITY );
+ 165               		.loc 1 164 0
+ 166 0038 24E0      		ldi r18,lo8(4)
+ 167 003a 40E0      		ldi r20,0
+ 168 003c 52EC      		ldi r21,lo8(-62)
+ 169 003e 61E0      		ldi r22,lo8(1)
+ 170 0040 70E0      		ldi r23,0
+ 171 0042 82E0      		ldi r24,lo8(2)
+ 172 0044 0E94 0000 		call vAltStartComTestTasks
+ 173               	.LVL12:
+ 165:main.c        **** 	vStartRegTestTasks();
+ 174               		.loc 1 165 0
+ 175 0048 82E0      		ldi r24,lo8(2)
+ 176 004a 0E94 0000 		call vStartPolledQueueTasks
+ 177               	.LVL13:
+ 166:main.c        **** 
+ 178               		.loc 1 166 0
+ 179 004e 0E94 0000 		call vStartRegTestTasks
+ 180               	.LVL14:
+ 169:main.c        **** 
+ 181               		.loc 1 169 0
+ 182 0052 E12C      		mov r14,__zero_reg__
+ 183 0054 F12C      		mov r15,__zero_reg__
+ 184 0056 03E0      		ldi r16,lo8(3)
+ 185 0058 20E0      		ldi r18,0
+ 186 005a 30E0      		ldi r19,0
+ 187 005c 45E5      		ldi r20,lo8(85)
+ 188 005e 50E0      		ldi r21,0
+ 189 0060 60E0      		ldi r22,lo8(.LC0)
+ 190 0062 70E0      		ldi r23,hi8(.LC0)
+ 191 0064 80E0      		ldi r24,lo8(gs(vErrorChecks))
+ 192 0066 90E0      		ldi r25,hi8(gs(vErrorChecks))
+ 193 0068 0E94 0000 		call xTaskCreate
+ 194               	.LVL15:
+ 172:main.c        **** 
+ 195               		.loc 1 172 0
+ 196 006c 83E0      		ldi r24,lo8(3)
+ 197 006e 0E94 0000 		call vStartFlashCoRoutines
+ 198               	.LVL16:
+ 177:main.c        **** 
+ 199               		.loc 1 177 0
+ 200 0072 0E94 0000 		call vTaskStartScheduler
+ 201               	.LVL17:
+ 180:main.c        **** /*-----------------------------------------------------------*/
+ 202               		.loc 1 180 0
+ 203 0076 80E0      		ldi r24,0
+ 204 0078 90E0      		ldi r25,0
+ 205               	/* epilogue start */
+ 206 007a 0F90      		pop __tmp_reg__
+ 207 007c DF91      		pop r29
+ 208 007e CF91      		pop r28
+ 209 0080 0F91      		pop r16
+ 210 0082 FF90      		pop r15
+ 211 0084 EF90      		pop r14
+ 212 0086 0895      		ret
+ 213               		.cfi_endproc
+ 214               	.LFE4:
+ 216               		.text
+ 217               	.global	vApplicationIdleHook
+ 219               	vApplicationIdleHook:
+ 220               	.LFB8:
+ 246:main.c        **** }
+ 247:main.c        **** /*-----------------------------------------------------------*/
+ 248:main.c        **** 
+ 249:main.c        **** void vApplicationIdleHook( void )
+ 250:main.c        **** {
+ 221               		.loc 1 250 0
+ 222               		.cfi_startproc
+ 223               	/* prologue: function */
+ 224               	/* frame size = 0 */
+ 225               	/* stack size = 0 */
+ 226               	.L__stack_usage = 0
+ 251:main.c        **** 	vCoRoutineSchedule();
+ 227               		.loc 1 251 0
+ 228 0072 0C94 0000 		jmp vCoRoutineSchedule
+ 229               	.LVL18:
+ 230               		.cfi_endproc
+ 231               	.LFE8:
+ 233               		.local	xErrorHasOccurred.2403
+ 234               		.comm	xErrorHasOccurred.2403,1,1
+ 235               		.data
+ 238               	ulDummyVariable.2398:
+ 239 0000 03        		.byte	3
+ 240 0001 00        		.byte	0
+ 241 0002 00        		.byte	0
+ 242 0003 00        		.byte	0
+ 243               		.text
+ 244               	.Letext0:
+ 245               		.file 2 "/home/link/avr8-gnu-toolchain/avr/include/stdint.h"
+ 246               		.file 3 "../../Source/include/../portable/GCC/ATMega323/portmacro.h"
+ 247               		.file 4 "../Common/include/integer.h"
+ 248               		.file 5 "../Common/include/comtest.h"
+ 249               		.file 6 "../Common/include/PollQ.h"
+ 250               		.file 7 "regtest.h"
+ 251               		.file 8 "../Common/include/partest.h"
+ 252               		.file 9 "../../Source/include/task.h"
+ 253               		.file 10 "/home/link/avr8-gnu-toolchain/avr/include/avr/eeprom.h"
+ 254               		.file 11 "../Common/include/crflash.h"
+ 255               		.file 12 "../../Source/include/croutine.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 main.c
+     /tmp/ccq2lIcg.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccq2lIcg.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccq2lIcg.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccq2lIcg.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccq2lIcg.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccq2lIcg.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccq2lIcg.s:12     .text:0000000000000000 vErrorChecks
+     /tmp/ccq2lIcg.s:238    .data:0000000000000000 ulDummyVariable.2398
+                             .bss:0000000000000000 xErrorHasOccurred.2403
+     /tmp/ccq2lIcg.s:101    .text.startup:0000000000000000 main
+     /tmp/ccq2lIcg.s:219    .text:0000000000000072 vApplicationIdleHook
+
+UNDEFINED SYMBOLS
+vTaskDelay
+__muluhisi3
+xAreIntegerMathsTaskStillRunning
+xAreComTestTasksStillRunning
+xArePollingQueuesStillRunning
+xAreRegTestTasksStillRunning
+vParTestToggleLED
+eeprom_read_block
+eeprom_write_byte
+vParTestInitialise
+vStartIntegerMathTasks
+vAltStartComTestTasks
+vStartPolledQueueTasks
+vStartRegTestTasks
+xTaskCreate
+vStartFlashCoRoutines
+vTaskStartScheduler
+vCoRoutineSchedule
+__do_copy_data
+__do_clear_bss

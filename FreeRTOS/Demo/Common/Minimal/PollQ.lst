@@ -1,0 +1,606 @@
+   1               		.file	"PollQ.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.Ltext0:
+  10               		.cfi_sections	.debug_frame
+  11               		.section	.lowtext,"ax",@progbits
+  13               	vPolledQueueProducer:
+  14               	.LFB5:
+  15               		.file 1 "../Common/Minimal/PollQ.c"
+   1:../Common/Minimal/PollQ.c **** /*
+   2:../Common/Minimal/PollQ.c ****  * FreeRTOS Kernel V10.1.1
+   3:../Common/Minimal/PollQ.c ****  * Copyright (C) 2018 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+   4:../Common/Minimal/PollQ.c ****  *
+   5:../Common/Minimal/PollQ.c ****  * Permission is hereby granted, free of charge, to any person obtaining a copy of
+   6:../Common/Minimal/PollQ.c ****  * this software and associated documentation files (the "Software"), to deal in
+   7:../Common/Minimal/PollQ.c ****  * the Software without restriction, including without limitation the rights to
+   8:../Common/Minimal/PollQ.c ****  * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+   9:../Common/Minimal/PollQ.c ****  * the Software, and to permit persons to whom the Software is furnished to do so,
+  10:../Common/Minimal/PollQ.c ****  * subject to the following conditions:
+  11:../Common/Minimal/PollQ.c ****  *
+  12:../Common/Minimal/PollQ.c ****  * The above copyright notice and this permission notice shall be included in all
+  13:../Common/Minimal/PollQ.c ****  * copies or substantial portions of the Software.
+  14:../Common/Minimal/PollQ.c ****  *
+  15:../Common/Minimal/PollQ.c ****  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  16:../Common/Minimal/PollQ.c ****  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+  17:../Common/Minimal/PollQ.c ****  * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+  18:../Common/Minimal/PollQ.c ****  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+  19:../Common/Minimal/PollQ.c ****  * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+  20:../Common/Minimal/PollQ.c ****  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  21:../Common/Minimal/PollQ.c ****  *
+  22:../Common/Minimal/PollQ.c ****  * http://www.FreeRTOS.org
+  23:../Common/Minimal/PollQ.c ****  * http://aws.amazon.com/freertos
+  24:../Common/Minimal/PollQ.c ****  *
+  25:../Common/Minimal/PollQ.c ****  * 1 tab == 4 spaces!
+  26:../Common/Minimal/PollQ.c ****  */
+  27:../Common/Minimal/PollQ.c **** 
+  28:../Common/Minimal/PollQ.c **** /*
+  29:../Common/Minimal/PollQ.c ****  * This version of PollQ. c is for use on systems that have limited stack
+  30:../Common/Minimal/PollQ.c ****  * space and no display facilities.  The complete version can be found in
+  31:../Common/Minimal/PollQ.c ****  * the Demo/Common/Full directory.
+  32:../Common/Minimal/PollQ.c ****  *
+  33:../Common/Minimal/PollQ.c ****  * Creates two tasks that communicate over a single queue.  One task acts as a
+  34:../Common/Minimal/PollQ.c ****  * producer, the other a consumer.
+  35:../Common/Minimal/PollQ.c ****  *
+  36:../Common/Minimal/PollQ.c ****  * The producer loops for three iteration, posting an incrementing number onto the
+  37:../Common/Minimal/PollQ.c ****  * queue each cycle.  It then delays for a fixed period before doing exactly the
+  38:../Common/Minimal/PollQ.c ****  * same again.
+  39:../Common/Minimal/PollQ.c ****  *
+  40:../Common/Minimal/PollQ.c ****  * The consumer loops emptying the queue.  Each item removed from the queue is
+  41:../Common/Minimal/PollQ.c ****  * checked to ensure it contains the expected value.  When the queue is empty it
+  42:../Common/Minimal/PollQ.c ****  * blocks for a fixed period, then does the same again.
+  43:../Common/Minimal/PollQ.c ****  *
+  44:../Common/Minimal/PollQ.c ****  * All queue access is performed without blocking.  The consumer completely empties
+  45:../Common/Minimal/PollQ.c ****  * the queue each time it runs so the producer should never find the queue full.
+  46:../Common/Minimal/PollQ.c ****  *
+  47:../Common/Minimal/PollQ.c ****  * An error is flagged if the consumer obtains an unexpected value or the producer
+  48:../Common/Minimal/PollQ.c ****  * find the queue is full.
+  49:../Common/Minimal/PollQ.c ****  */
+  50:../Common/Minimal/PollQ.c **** 
+  51:../Common/Minimal/PollQ.c **** /*
+  52:../Common/Minimal/PollQ.c **** Changes from V2.0.0
+  53:../Common/Minimal/PollQ.c **** 
+  54:../Common/Minimal/PollQ.c **** 	+ Delay periods are now specified using variables and constants of
+  55:../Common/Minimal/PollQ.c **** 	  TickType_t rather than uint32_t.
+  56:../Common/Minimal/PollQ.c **** */
+  57:../Common/Minimal/PollQ.c **** 
+  58:../Common/Minimal/PollQ.c **** #include <stdlib.h>
+  59:../Common/Minimal/PollQ.c **** 
+  60:../Common/Minimal/PollQ.c **** /* Scheduler include files. */
+  61:../Common/Minimal/PollQ.c **** #include "FreeRTOS.h"
+  62:../Common/Minimal/PollQ.c **** #include "task.h"
+  63:../Common/Minimal/PollQ.c **** #include "queue.h"
+  64:../Common/Minimal/PollQ.c **** 
+  65:../Common/Minimal/PollQ.c **** /* Demo program include files. */
+  66:../Common/Minimal/PollQ.c **** #include "PollQ.h"
+  67:../Common/Minimal/PollQ.c **** 
+  68:../Common/Minimal/PollQ.c **** #define pollqSTACK_SIZE			configMINIMAL_STACK_SIZE
+  69:../Common/Minimal/PollQ.c **** #define pollqQUEUE_SIZE			( 10 )
+  70:../Common/Minimal/PollQ.c **** #define pollqPRODUCER_DELAY		( pdMS_TO_TICKS( ( TickType_t ) 200 ) )
+  71:../Common/Minimal/PollQ.c **** #define pollqCONSUMER_DELAY		( pollqPRODUCER_DELAY - ( TickType_t ) ( 20 / portTICK_PERIOD_MS ) )
+  72:../Common/Minimal/PollQ.c **** #define pollqNO_DELAY			( ( TickType_t ) 0 )
+  73:../Common/Minimal/PollQ.c **** #define pollqVALUES_TO_PRODUCE	( ( BaseType_t ) 3 )
+  74:../Common/Minimal/PollQ.c **** #define pollqINITIAL_VALUE		( ( BaseType_t ) 0 )
+  75:../Common/Minimal/PollQ.c **** 
+  76:../Common/Minimal/PollQ.c **** /* The task that posts the incrementing number onto the queue. */
+  77:../Common/Minimal/PollQ.c **** static portTASK_FUNCTION_PROTO( vPolledQueueProducer, pvParameters );
+  78:../Common/Minimal/PollQ.c **** 
+  79:../Common/Minimal/PollQ.c **** /* The task that empties the queue. */
+  80:../Common/Minimal/PollQ.c **** static portTASK_FUNCTION_PROTO( vPolledQueueConsumer, pvParameters );
+  81:../Common/Minimal/PollQ.c **** 
+  82:../Common/Minimal/PollQ.c **** /* Variables that are used to check that the tasks are still running with no
+  83:../Common/Minimal/PollQ.c **** errors. */
+  84:../Common/Minimal/PollQ.c **** static volatile BaseType_t xPollingConsumerCount = pollqINITIAL_VALUE, xPollingProducerCount = poll
+  85:../Common/Minimal/PollQ.c **** 
+  86:../Common/Minimal/PollQ.c **** /*-----------------------------------------------------------*/
+  87:../Common/Minimal/PollQ.c **** 
+  88:../Common/Minimal/PollQ.c **** void vStartPolledQueueTasks( UBaseType_t uxPriority )
+  89:../Common/Minimal/PollQ.c **** {
+  90:../Common/Minimal/PollQ.c **** static QueueHandle_t xPolledQueue;
+  91:../Common/Minimal/PollQ.c **** 
+  92:../Common/Minimal/PollQ.c **** 	/* Create the queue used by the producer and consumer. */
+  93:../Common/Minimal/PollQ.c **** 	xPolledQueue = xQueueCreate( pollqQUEUE_SIZE, ( UBaseType_t ) sizeof( uint16_t ) );
+  94:../Common/Minimal/PollQ.c **** 
+  95:../Common/Minimal/PollQ.c **** 	if( xPolledQueue != NULL )
+  96:../Common/Minimal/PollQ.c **** 	{
+  97:../Common/Minimal/PollQ.c **** 		/* vQueueAddToRegistry() adds the queue to the queue registry, if one is
+  98:../Common/Minimal/PollQ.c **** 		in use.  The queue registry is provided as a means for kernel aware
+  99:../Common/Minimal/PollQ.c **** 		debuggers to locate queues and has no purpose if a kernel aware debugger
+ 100:../Common/Minimal/PollQ.c **** 		is not being used.  The call to vQueueAddToRegistry() will be removed
+ 101:../Common/Minimal/PollQ.c **** 		by the pre-processor if configQUEUE_REGISTRY_SIZE is not defined or is
+ 102:../Common/Minimal/PollQ.c **** 		defined to be less than 1. */
+ 103:../Common/Minimal/PollQ.c **** 		vQueueAddToRegistry( xPolledQueue, "Poll_Test_Queue" );
+ 104:../Common/Minimal/PollQ.c **** 
+ 105:../Common/Minimal/PollQ.c **** 		/* Spawn the producer and consumer. */
+ 106:../Common/Minimal/PollQ.c **** 		xTaskCreate( vPolledQueueConsumer, "QConsNB", pollqSTACK_SIZE, ( void * ) &xPolledQueue, uxPriori
+ 107:../Common/Minimal/PollQ.c **** 		xTaskCreate( vPolledQueueProducer, "QProdNB", pollqSTACK_SIZE, ( void * ) &xPolledQueue, uxPriori
+ 108:../Common/Minimal/PollQ.c **** 	}
+ 109:../Common/Minimal/PollQ.c **** }
+ 110:../Common/Minimal/PollQ.c **** /*-----------------------------------------------------------*/
+ 111:../Common/Minimal/PollQ.c **** 
+ 112:../Common/Minimal/PollQ.c **** static portTASK_FUNCTION( vPolledQueueProducer, pvParameters )
+ 113:../Common/Minimal/PollQ.c **** {
+  16               		.loc 1 113 0
+  17               		.cfi_startproc
+  18               	.LVL0:
+  19 0000 CF93      		push r28
+  20               	.LCFI0:
+  21               		.cfi_def_cfa_offset 4
+  22               		.cfi_offset 28, -3
+  23 0002 DF93      		push r29
+  24               	.LCFI1:
+  25               		.cfi_def_cfa_offset 5
+  26               		.cfi_offset 29, -4
+  27 0004 1F92      		push __zero_reg__
+  28 0006 1F92      		push __zero_reg__
+  29               	.LCFI2:
+  30               		.cfi_def_cfa_offset 7
+  31 0008 CDB7      		in r28,__SP_L__
+  32 000a DEB7      		in r29,__SP_H__
+  33               	.LCFI3:
+  34               		.cfi_def_cfa_register 28
+  35               	/* prologue: function */
+  36               	/* frame size = 2 */
+  37               	/* stack size = 4 */
+  38               	.L__stack_usage = 4
+  39 000c 7C01      		movw r14,r24
+ 114:../Common/Minimal/PollQ.c **** uint16_t usValue = ( uint16_t ) 0;
+  40               		.loc 1 114 0
+  41 000e 1A82      		std Y+2,__zero_reg__
+  42 0010 1982      		std Y+1,__zero_reg__
+  43               	.LVL1:
+ 115:../Common/Minimal/PollQ.c **** BaseType_t xError = pdFALSE, xLoop;
+  44               		.loc 1 115 0
+  45 0012 00E0      		ldi r16,0
+  46               	.LVL2:
+  47               	.L5:
+  48 0014 13E0      		ldi r17,lo8(3)
+  49               	.LVL3:
+  50               	.L4:
+ 116:../Common/Minimal/PollQ.c **** 
+ 117:../Common/Minimal/PollQ.c **** 	for( ;; )
+ 118:../Common/Minimal/PollQ.c **** 	{
+ 119:../Common/Minimal/PollQ.c **** 		for( xLoop = 0; xLoop < pollqVALUES_TO_PRODUCE; xLoop++ )
+ 120:../Common/Minimal/PollQ.c **** 		{
+ 121:../Common/Minimal/PollQ.c **** 			/* Send an incrementing number on the queue without blocking. */
+ 122:../Common/Minimal/PollQ.c **** 			if( xQueueSend( *( ( QueueHandle_t * ) pvParameters ), ( void * ) &usValue, pollqNO_DELAY ) != p
+  51               		.loc 1 122 0
+  52 0016 20E0      		ldi r18,0
+  53 0018 40E0      		ldi r20,0
+  54 001a 50E0      		ldi r21,0
+  55 001c BE01      		movw r22,r28
+  56 001e 6F5F      		subi r22,-1
+  57 0020 7F4F      		sbci r23,-1
+  58 0022 F701      		movw r30,r14
+  59 0024 8081      		ld r24,Z
+  60 0026 9181      		ldd r25,Z+1
+  61 0028 0E94 0000 		call xQueueGenericSend
+  62               	.LVL4:
+  63 002c 8130      		cpi r24,lo8(1)
+  64 002e 01F4      		brne .L6
+ 123:../Common/Minimal/PollQ.c **** 			{
+ 124:../Common/Minimal/PollQ.c **** 				/* We should never find the queue full so if we get here there
+ 125:../Common/Minimal/PollQ.c **** 				has been an error. */
+ 126:../Common/Minimal/PollQ.c **** 				xError = pdTRUE;
+ 127:../Common/Minimal/PollQ.c **** 			}
+ 128:../Common/Minimal/PollQ.c **** 			else
+ 129:../Common/Minimal/PollQ.c **** 			{
+ 130:../Common/Minimal/PollQ.c **** 				if( xError == pdFALSE )
+  65               		.loc 1 130 0
+  66 0030 0111      		cpse r16,__zero_reg__
+  67 0032 00C0      		rjmp .L3
+ 131:../Common/Minimal/PollQ.c **** 				{
+ 132:../Common/Minimal/PollQ.c **** 					/* If an error has ever been recorded we stop incrementing the
+ 133:../Common/Minimal/PollQ.c **** 					check variable. */
+ 134:../Common/Minimal/PollQ.c **** 					portENTER_CRITICAL();
+  68               		.loc 1 134 0
+  69               	/* #APP */
+  70               	 ;  134 "../Common/Minimal/PollQ.c" 1
+  71 0034 0FB6      		in __tmp_reg__, __SREG__
+  72 0036 F894      		cli
+  73 0038 0F92      		push __tmp_reg__
+  74               		
+  75               	 ;  0 "" 2
+ 135:../Common/Minimal/PollQ.c **** 						xPollingProducerCount++;
+  76               		.loc 1 135 0
+  77               	/* #NOAPP */
+  78 003a 8091 0000 		lds r24,xPollingProducerCount
+  79 003e 8F5F      		subi r24,lo8(-(1))
+  80 0040 8093 0000 		sts xPollingProducerCount,r24
+ 136:../Common/Minimal/PollQ.c **** 					portEXIT_CRITICAL();
+  81               		.loc 1 136 0
+  82               	/* #APP */
+  83               	 ;  136 "../Common/Minimal/PollQ.c" 1
+  84 0044 0F90      		pop __tmp_reg__
+  85 0046 0FBE      		out __SREG__, __tmp_reg__
+  86               		
+  87               	 ;  0 "" 2
+  88               	/* #NOAPP */
+  89               	.L3:
+ 137:../Common/Minimal/PollQ.c **** 				}
+ 138:../Common/Minimal/PollQ.c **** 
+ 139:../Common/Minimal/PollQ.c **** 				/* Update the value we are going to post next time around. */
+ 140:../Common/Minimal/PollQ.c **** 				usValue++;
+  90               		.loc 1 140 0
+  91 0048 8981      		ldd r24,Y+1
+  92 004a 9A81      		ldd r25,Y+2
+  93 004c 0196      		adiw r24,1
+  94 004e 9A83      		std Y+2,r25
+  95 0050 8983      		std Y+1,r24
+  96 0052 00C0      		rjmp .L2
+  97               	.L6:
+ 126:../Common/Minimal/PollQ.c **** 			}
+  98               		.loc 1 126 0
+  99 0054 01E0      		ldi r16,lo8(1)
+ 100               	.LVL5:
+ 101               	.L2:
+ 102 0056 1150      		subi r17,lo8(-(-1))
+ 103               	.LVL6:
+ 119:../Common/Minimal/PollQ.c **** 		{
+ 104               		.loc 1 119 0 discriminator 2
+ 105 0058 01F4      		brne .L4
+ 141:../Common/Minimal/PollQ.c **** 			}
+ 142:../Common/Minimal/PollQ.c **** 		}
+ 143:../Common/Minimal/PollQ.c **** 
+ 144:../Common/Minimal/PollQ.c **** 		/* Wait before we start posting again to ensure the consumer runs and
+ 145:../Common/Minimal/PollQ.c **** 		empties the queue. */
+ 146:../Common/Minimal/PollQ.c **** 		vTaskDelay( pollqPRODUCER_DELAY );
+ 106               		.loc 1 146 0
+ 107 005a 83E0      		ldi r24,lo8(3)
+ 108 005c 90E0      		ldi r25,0
+ 109 005e 0E94 0000 		call vTaskDelay
+ 110               	.LVL7:
+ 147:../Common/Minimal/PollQ.c **** 	}
+ 111               		.loc 1 147 0
+ 112 0062 00C0      		rjmp .L5
+ 113               		.cfi_endproc
+ 114               	.LFE5:
+ 117               	vPolledQueueConsumer:
+ 118               	.LFB6:
+ 148:../Common/Minimal/PollQ.c **** }  /*lint !e818 Function prototype must conform to API. */
+ 149:../Common/Minimal/PollQ.c **** /*-----------------------------------------------------------*/
+ 150:../Common/Minimal/PollQ.c **** 
+ 151:../Common/Minimal/PollQ.c **** static portTASK_FUNCTION( vPolledQueueConsumer, pvParameters )
+ 152:../Common/Minimal/PollQ.c **** {
+ 119               		.loc 1 152 0
+ 120               		.cfi_startproc
+ 121               	.LVL8:
+ 122 0064 CF93      		push r28
+ 123               	.LCFI4:
+ 124               		.cfi_def_cfa_offset 4
+ 125               		.cfi_offset 28, -3
+ 126 0066 DF93      		push r29
+ 127               	.LCFI5:
+ 128               		.cfi_def_cfa_offset 5
+ 129               		.cfi_offset 29, -4
+ 130 0068 1F92      		push __zero_reg__
+ 131 006a 1F92      		push __zero_reg__
+ 132               	.LCFI6:
+ 133               		.cfi_def_cfa_offset 7
+ 134 006c CDB7      		in r28,__SP_L__
+ 135 006e DEB7      		in r29,__SP_H__
+ 136               	.LCFI7:
+ 137               		.cfi_def_cfa_register 28
+ 138               	/* prologue: function */
+ 139               	/* frame size = 2 */
+ 140               	/* stack size = 4 */
+ 141               	.L__stack_usage = 4
+ 142 0070 6C01      		movw r12,r24
+ 143               	.LVL9:
+ 153:../Common/Minimal/PollQ.c **** uint16_t usData, usExpectedValue = ( uint16_t ) 0;
+ 154:../Common/Minimal/PollQ.c **** BaseType_t xError = pdFALSE;
+ 144               		.loc 1 154 0
+ 145 0072 F12C      		mov r15,__zero_reg__
+ 153:../Common/Minimal/PollQ.c **** uint16_t usData, usExpectedValue = ( uint16_t ) 0;
+ 146               		.loc 1 153 0
+ 147 0074 00E0      		ldi r16,0
+ 148 0076 10E0      		ldi r17,0
+ 149               	.LVL10:
+ 150               	.L10:
+ 155:../Common/Minimal/PollQ.c **** 
+ 156:../Common/Minimal/PollQ.c **** 	for( ;; )
+ 157:../Common/Minimal/PollQ.c **** 	{
+ 158:../Common/Minimal/PollQ.c **** 		/* Loop until the queue is empty. */
+ 159:../Common/Minimal/PollQ.c **** 		while( uxQueueMessagesWaiting( *( ( QueueHandle_t * ) pvParameters ) ) )
+ 151               		.loc 1 159 0
+ 152 0078 F601      		movw r30,r12
+ 153 007a 8081      		ld r24,Z
+ 154 007c 9181      		ldd r25,Z+1
+ 155 007e 0E94 0000 		call uxQueueMessagesWaiting
+ 156               	.LVL11:
+ 157 0082 8823      		tst r24
+ 158 0084 01F0      		breq .L15
+ 160:../Common/Minimal/PollQ.c **** 		{
+ 161:../Common/Minimal/PollQ.c **** 			if( xQueueReceive( *( ( QueueHandle_t * ) pvParameters ), &usData, pollqNO_DELAY ) == pdPASS )
+ 159               		.loc 1 161 0
+ 160 0086 40E0      		ldi r20,0
+ 161 0088 50E0      		ldi r21,0
+ 162 008a BE01      		movw r22,r28
+ 163 008c 6F5F      		subi r22,-1
+ 164 008e 7F4F      		sbci r23,-1
+ 165 0090 F601      		movw r30,r12
+ 166 0092 8081      		ld r24,Z
+ 167 0094 9181      		ldd r25,Z+1
+ 168 0096 0E94 0000 		call xQueueReceive
+ 169               	.LVL12:
+ 170 009a 8130      		cpi r24,lo8(1)
+ 171 009c 01F4      		brne .L10
+ 162:../Common/Minimal/PollQ.c **** 			{
+ 163:../Common/Minimal/PollQ.c **** 				if( usData != usExpectedValue )
+ 172               		.loc 1 163 0
+ 173 009e 8981      		ldd r24,Y+1
+ 174 00a0 9A81      		ldd r25,Y+2
+ 175 00a2 0817      		cp r16,r24
+ 176 00a4 1907      		cpc r17,r25
+ 177 00a6 01F4      		brne .L14
+ 164:../Common/Minimal/PollQ.c **** 				{
+ 165:../Common/Minimal/PollQ.c **** 					/* This is not what we expected to receive so an error has
+ 166:../Common/Minimal/PollQ.c **** 					occurred. */
+ 167:../Common/Minimal/PollQ.c **** 					xError = pdTRUE;
+ 168:../Common/Minimal/PollQ.c **** 
+ 169:../Common/Minimal/PollQ.c **** 					/* Catch-up to the value we received so our next expected
+ 170:../Common/Minimal/PollQ.c **** 					value should again be correct. */
+ 171:../Common/Minimal/PollQ.c **** 					usExpectedValue = usData;
+ 172:../Common/Minimal/PollQ.c **** 				}
+ 173:../Common/Minimal/PollQ.c **** 				else
+ 174:../Common/Minimal/PollQ.c **** 				{
+ 175:../Common/Minimal/PollQ.c **** 					if( xError == pdFALSE )
+ 178               		.loc 1 175 0
+ 179 00a8 F110      		cpse r15,__zero_reg__
+ 180 00aa 00C0      		rjmp .L12
+ 176:../Common/Minimal/PollQ.c **** 					{
+ 177:../Common/Minimal/PollQ.c **** 						/* Only increment the check variable if no errors have
+ 178:../Common/Minimal/PollQ.c **** 						occurred. */
+ 179:../Common/Minimal/PollQ.c **** 						portENTER_CRITICAL();
+ 181               		.loc 1 179 0
+ 182               	/* #APP */
+ 183               	 ;  179 "../Common/Minimal/PollQ.c" 1
+ 184 00ac 0FB6      		in __tmp_reg__, __SREG__
+ 185 00ae F894      		cli
+ 186 00b0 0F92      		push __tmp_reg__
+ 187               		
+ 188               	 ;  0 "" 2
+ 180:../Common/Minimal/PollQ.c **** 							xPollingConsumerCount++;
+ 189               		.loc 1 180 0
+ 190               	/* #NOAPP */
+ 191 00b2 8091 0000 		lds r24,xPollingConsumerCount
+ 192 00b6 8F5F      		subi r24,lo8(-(1))
+ 193 00b8 8093 0000 		sts xPollingConsumerCount,r24
+ 181:../Common/Minimal/PollQ.c **** 						portEXIT_CRITICAL();
+ 194               		.loc 1 181 0
+ 195               	/* #APP */
+ 196               	 ;  181 "../Common/Minimal/PollQ.c" 1
+ 197 00bc 0F90      		pop __tmp_reg__
+ 198 00be 0FBE      		out __SREG__, __tmp_reg__
+ 199               		
+ 200               	 ;  0 "" 2
+ 201               	/* #NOAPP */
+ 202 00c0 00C0      		rjmp .L12
+ 203               	.L14:
+ 204 00c2 8C01      		movw r16,r24
+ 205               	.LVL13:
+ 167:../Common/Minimal/PollQ.c **** 
+ 206               		.loc 1 167 0
+ 207 00c4 FF24      		clr r15
+ 208 00c6 F394      		inc r15
+ 209               	.LVL14:
+ 210               	.L12:
+ 182:../Common/Minimal/PollQ.c **** 					}
+ 183:../Common/Minimal/PollQ.c **** 				}
+ 184:../Common/Minimal/PollQ.c **** 
+ 185:../Common/Minimal/PollQ.c **** 				/* Next time round we would expect the number to be one higher. */
+ 186:../Common/Minimal/PollQ.c **** 				usExpectedValue++;
+ 211               		.loc 1 186 0
+ 212 00c8 0F5F      		subi r16,-1
+ 213 00ca 1F4F      		sbci r17,-1
+ 214               	.LVL15:
+ 215 00cc 00C0      		rjmp .L10
+ 216               	.L15:
+ 187:../Common/Minimal/PollQ.c **** 			}
+ 188:../Common/Minimal/PollQ.c **** 		}
+ 189:../Common/Minimal/PollQ.c **** 
+ 190:../Common/Minimal/PollQ.c **** 		/* Now the queue is empty we block, allowing the producer to place more
+ 191:../Common/Minimal/PollQ.c **** 		items in the queue. */
+ 192:../Common/Minimal/PollQ.c **** 		vTaskDelay( pollqCONSUMER_DELAY );
+ 217               		.loc 1 192 0
+ 218 00ce 8FEE      		ldi r24,lo8(-17)
+ 219 00d0 9FEF      		ldi r25,lo8(-1)
+ 220 00d2 0E94 0000 		call vTaskDelay
+ 221               	.LVL16:
+ 193:../Common/Minimal/PollQ.c **** 	}
+ 222               		.loc 1 193 0
+ 223 00d6 00C0      		rjmp .L10
+ 224               		.cfi_endproc
+ 225               	.LFE6:
+ 227               		.section	.rodata.str1.1,"aMS",@progbits,1
+ 228               	.LC0:
+ 229 0000 5143 6F6E 		.string	"QConsNB"
+ 229      734E 4200 
+ 230               	.LC1:
+ 231 0008 5150 726F 		.string	"QProdNB"
+ 231      644E 4200 
+ 232               		.text
+ 233               	.global	vStartPolledQueueTasks
+ 235               	vStartPolledQueueTasks:
+ 236               	.LFB4:
+  89:../Common/Minimal/PollQ.c **** static QueueHandle_t xPolledQueue;
+ 237               		.loc 1 89 0
+ 238               		.cfi_startproc
+ 239               	.LVL17:
+ 240 0000 EF92      		push r14
+ 241               	.LCFI8:
+ 242               		.cfi_def_cfa_offset 4
+ 243               		.cfi_offset 14, -3
+ 244 0002 FF92      		push r15
+ 245               	.LCFI9:
+ 246               		.cfi_def_cfa_offset 5
+ 247               		.cfi_offset 15, -4
+ 248 0004 0F93      		push r16
+ 249               	.LCFI10:
+ 250               		.cfi_def_cfa_offset 6
+ 251               		.cfi_offset 16, -5
+ 252 0006 CF93      		push r28
+ 253               	.LCFI11:
+ 254               		.cfi_def_cfa_offset 7
+ 255               		.cfi_offset 28, -6
+ 256               	/* prologue: function */
+ 257               	/* frame size = 0 */
+ 258               	/* stack size = 4 */
+ 259               	.L__stack_usage = 4
+ 260 0008 C82F      		mov r28,r24
+  93:../Common/Minimal/PollQ.c **** 
+ 261               		.loc 1 93 0
+ 262 000a 40E0      		ldi r20,0
+ 263 000c 62E0      		ldi r22,lo8(2)
+ 264 000e 8AE0      		ldi r24,lo8(10)
+ 265               	.LVL18:
+ 266 0010 0E94 0000 		call xQueueGenericCreate
+ 267               	.LVL19:
+ 268 0014 9093 0000 		sts xPolledQueue.2203+1,r25
+ 269 0018 8093 0000 		sts xPolledQueue.2203,r24
+  95:../Common/Minimal/PollQ.c **** 	{
+ 270               		.loc 1 95 0
+ 271 001c 892B      		or r24,r25
+ 272 001e 01F0      		breq .L16
+ 106:../Common/Minimal/PollQ.c **** 		xTaskCreate( vPolledQueueProducer, "QProdNB", pollqSTACK_SIZE, ( void * ) &xPolledQueue, uxPriori
+ 273               		.loc 1 106 0
+ 274 0020 E12C      		mov r14,__zero_reg__
+ 275 0022 F12C      		mov r15,__zero_reg__
+ 276 0024 0C2F      		mov r16,r28
+ 277 0026 20E0      		ldi r18,lo8(xPolledQueue.2203)
+ 278 0028 30E0      		ldi r19,hi8(xPolledQueue.2203)
+ 279 002a 45E5      		ldi r20,lo8(85)
+ 280 002c 50E0      		ldi r21,0
+ 281 002e 60E0      		ldi r22,lo8(.LC0)
+ 282 0030 70E0      		ldi r23,hi8(.LC0)
+ 283 0032 80E0      		ldi r24,lo8(gs(vPolledQueueConsumer))
+ 284 0034 90E0      		ldi r25,hi8(gs(vPolledQueueConsumer))
+ 285 0036 0E94 0000 		call xTaskCreate
+ 286               	.LVL20:
+ 107:../Common/Minimal/PollQ.c **** 	}
+ 287               		.loc 1 107 0
+ 288 003a 20E0      		ldi r18,lo8(xPolledQueue.2203)
+ 289 003c 30E0      		ldi r19,hi8(xPolledQueue.2203)
+ 290 003e 45E5      		ldi r20,lo8(85)
+ 291 0040 50E0      		ldi r21,0
+ 292 0042 60E0      		ldi r22,lo8(.LC1)
+ 293 0044 70E0      		ldi r23,hi8(.LC1)
+ 294 0046 80E0      		ldi r24,lo8(gs(vPolledQueueProducer))
+ 295 0048 90E0      		ldi r25,hi8(gs(vPolledQueueProducer))
+ 296 004a 0E94 0000 		call xTaskCreate
+ 297               	.LVL21:
+ 298               	.L16:
+ 299               	/* epilogue start */
+ 109:../Common/Minimal/PollQ.c **** /*-----------------------------------------------------------*/
+ 300               		.loc 1 109 0
+ 301 004e CF91      		pop r28
+ 302               	.LVL22:
+ 303 0050 0F91      		pop r16
+ 304 0052 FF90      		pop r15
+ 305 0054 EF90      		pop r14
+ 306 0056 0895      		ret
+ 307               		.cfi_endproc
+ 308               	.LFE4:
+ 310               	.global	xArePollingQueuesStillRunning
+ 312               	xArePollingQueuesStillRunning:
+ 313               	.LFB7:
+ 194:../Common/Minimal/PollQ.c **** } /*lint !e818 Function prototype must conform to API. */
+ 195:../Common/Minimal/PollQ.c **** /*-----------------------------------------------------------*/
+ 196:../Common/Minimal/PollQ.c **** 
+ 197:../Common/Minimal/PollQ.c **** /* This is called to check that all the created tasks are still running with no errors. */
+ 198:../Common/Minimal/PollQ.c **** BaseType_t xArePollingQueuesStillRunning( void )
+ 199:../Common/Minimal/PollQ.c **** {
+ 314               		.loc 1 199 0
+ 315               		.cfi_startproc
+ 316               	/* prologue: function */
+ 317               	/* frame size = 0 */
+ 318               	/* stack size = 0 */
+ 319               	.L__stack_usage = 0
+ 200:../Common/Minimal/PollQ.c **** BaseType_t xReturn;
+ 201:../Common/Minimal/PollQ.c **** 
+ 202:../Common/Minimal/PollQ.c **** 	/* Check both the consumer and producer poll count to check they have both
+ 203:../Common/Minimal/PollQ.c **** 	been changed since out last trip round.  We do not need a critical section
+ 204:../Common/Minimal/PollQ.c **** 	around the check variables as this is called from a higher priority than
+ 205:../Common/Minimal/PollQ.c **** 	the other tasks that access the same variables. */
+ 206:../Common/Minimal/PollQ.c **** 	if( ( xPollingConsumerCount == pollqINITIAL_VALUE ) ||
+ 320               		.loc 1 206 0
+ 321 0058 8091 0000 		lds r24,xPollingConsumerCount
+ 322 005c 8823      		tst r24
+ 323 005e 01F0      		breq .L24
+ 207:../Common/Minimal/PollQ.c **** 		( xPollingProducerCount == pollqINITIAL_VALUE )
+ 324               		.loc 1 207 0 discriminator 1
+ 325 0060 9091 0000 		lds r25,xPollingProducerCount
+ 208:../Common/Minimal/PollQ.c **** 	  )
+ 209:../Common/Minimal/PollQ.c **** 	{
+ 210:../Common/Minimal/PollQ.c **** 		xReturn = pdFALSE;
+ 326               		.loc 1 210 0 discriminator 1
+ 327 0064 81E0      		ldi r24,lo8(1)
+ 328 0066 9111      		cpse r25,__zero_reg__
+ 329 0068 00C0      		rjmp .L22
+ 330               	.L24:
+ 331               		.loc 1 210 0 is_stmt 0
+ 332 006a 80E0      		ldi r24,0
+ 333               	.L22:
+ 334               	.LVL23:
+ 211:../Common/Minimal/PollQ.c **** 	}
+ 212:../Common/Minimal/PollQ.c **** 	else
+ 213:../Common/Minimal/PollQ.c **** 	{
+ 214:../Common/Minimal/PollQ.c **** 		xReturn = pdTRUE;
+ 215:../Common/Minimal/PollQ.c **** 	}
+ 216:../Common/Minimal/PollQ.c **** 
+ 217:../Common/Minimal/PollQ.c **** 	/* Set the check variables back down so we know if they have been
+ 218:../Common/Minimal/PollQ.c **** 	incremented the next time around. */
+ 219:../Common/Minimal/PollQ.c **** 	xPollingConsumerCount = pollqINITIAL_VALUE;
+ 335               		.loc 1 219 0 is_stmt 1
+ 336 006c 1092 0000 		sts xPollingConsumerCount,__zero_reg__
+ 220:../Common/Minimal/PollQ.c **** 	xPollingProducerCount = pollqINITIAL_VALUE;
+ 337               		.loc 1 220 0
+ 338 0070 1092 0000 		sts xPollingProducerCount,__zero_reg__
+ 221:../Common/Minimal/PollQ.c **** 
+ 222:../Common/Minimal/PollQ.c **** 	return xReturn;
+ 223:../Common/Minimal/PollQ.c **** }
+ 339               		.loc 1 223 0
+ 340 0074 0895      		ret
+ 341               		.cfi_endproc
+ 342               	.LFE7:
+ 344               		.local	xPolledQueue.2203
+ 345               		.comm	xPolledQueue.2203,2,1
+ 346               		.local	xPollingProducerCount
+ 347               		.comm	xPollingProducerCount,1,1
+ 348               		.local	xPollingConsumerCount
+ 349               		.comm	xPollingConsumerCount,1,1
+ 350               	.Letext0:
+ 351               		.file 2 "/home/link/avr8-gnu-toolchain/avr/include/stdint.h"
+ 352               		.file 3 "../../Source/include/../portable/GCC/ATMega323/portmacro.h"
+ 353               		.file 4 "../../Source/include/task.h"
+ 354               		.file 5 "../../Source/include/queue.h"
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 PollQ.c
+     /tmp/cchabM3z.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cchabM3z.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cchabM3z.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cchabM3z.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/cchabM3z.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cchabM3z.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cchabM3z.s:13     .lowtext:0000000000000000 vPolledQueueProducer
+     /tmp/cchabM3z.s:345    .bss:0000000000000002 xPollingProducerCount
+     /tmp/cchabM3z.s:117    .lowtext:0000000000000064 vPolledQueueConsumer
+     /tmp/cchabM3z.s:347    .bss:0000000000000003 xPollingConsumerCount
+     /tmp/cchabM3z.s:235    .text:0000000000000000 vStartPolledQueueTasks
+                             .bss:0000000000000000 xPolledQueue.2203
+     /tmp/cchabM3z.s:312    .text:0000000000000058 xArePollingQueuesStillRunning
+
+UNDEFINED SYMBOLS
+xQueueGenericSend
+vTaskDelay
+uxQueueMessagesWaiting
+xQueueReceive
+xQueueGenericCreate
+xTaskCreate
+__do_copy_data
+__do_clear_bss
