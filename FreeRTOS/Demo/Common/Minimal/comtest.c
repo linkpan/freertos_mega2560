@@ -66,6 +66,7 @@
 #include "serial.h"
 #include "comtest.h"
 #include "partest.h"
+#include <string.h>
 
 #define comSTACK_SIZE				configMINIMAL_STACK_SIZE
 #define comTX_LED_OFFSET			( 0 )
@@ -111,6 +112,7 @@ increment this variable after every successfully received sequence.  If at any
 time the sequence is incorrect the the variable will stop being incremented. */
 static volatile UBaseType_t uxRxLoops = comINITIAL_RX_COUNT_VALUE;
 
+void xSerialxPrint( xComPortHandle pxPort, uint8_t * str) __attribute__ ((flatten));
 /*-----------------------------------------------------------*/
 
 void vAltStartComTestTasks( UBaseType_t uxPriority, uint32_t ulBaudRate, UBaseType_t uxLED )
@@ -130,6 +132,7 @@ static portTASK_FUNCTION( vComTxTask, pvParameters )
 char cByteToSend;
 TickType_t xTimeToWait;
 
+	char serText = "Serial TX task\n";
 	/* Just to stop compiler warnings. */
 	( void ) pvParameters;
 
@@ -137,14 +140,18 @@ TickType_t xTimeToWait;
 	{
 		/* Simply transmit a sequence of characters from comFIRST_BYTE to
 		comLAST_BYTE. */
-		for( cByteToSend = comFIRST_BYTE; cByteToSend <= comLAST_BYTE; cByteToSend++ )
-		{
-			if( xSerialPutChar( xPort, cByteToSend, comNO_BLOCK ) == pdPASS )
-			{
-				vParTestToggleLED( uxBaseLED + comTX_LED_OFFSET );
-			}
-		}
-
+//		for( cByteToSend = comFIRST_BYTE; cByteToSend <= comLAST_BYTE; cByteToSend++ )
+//		{
+//			if( xSerialPutChar( xPort, cByteToSend, comNO_BLOCK ) == pdPASS )
+//			{
+//				vParTestToggleLED( uxBaseLED + comTX_LED_OFFSET );
+//			}
+//		}
+	 	xSerialPutChar( xPort, 'H', comNO_BLOCK );
+		xSerialPutChar( xPort, 0x0a, comNO_BLOCK );
+		xSerialPutChar( xPort, 0x0d, comNO_BLOCK );
+//		xSerialxPrint(xPort, serText);
+			
 		/* Turn the LED off while we are not doing anything. */
 		vParTestSetLED( uxBaseLED + comTX_LED_OFFSET, pdFALSE );
 
@@ -162,7 +169,7 @@ TickType_t xTimeToWait;
 			xTimeToWait = comTX_MIN_BLOCK_TIME;
 		}
 
-		vTaskDelay( xTimeToWait );
+		vTaskDelay( 1500); //xTimeToWait );
 	}
 } /*lint !e715 !e818 pvParameters is required for a task function even if it is not referenced. */
 /*-----------------------------------------------------------*/
@@ -188,15 +195,15 @@ BaseType_t xResyncRequired = pdFALSE, xErrorOccurred = pdFALSE;
 				/* Was this the byte we were expecting?  If so, toggle the LED,
 				otherwise we are out on sync and should break out of the loop
 				until the expected character sequence is about to restart. */
-				if( cByteRxed == cExpectedByte )
-				{
+//				if( cByteRxed == cExpectedByte )
+//				{
 					vParTestToggleLED( uxBaseLED + comRX_LED_OFFSET );
-				}
-				else
-				{
-					xResyncRequired = pdTRUE;
-					break; /*lint !e960 Non-switch break allowed. */
-				}
+//				}
+//				else
+//				{
+//					xResyncRequired = pdTRUE;
+//					break; /*lint !e960 Non-switch break allowed. */
+//				}
 			}
 		}
 
@@ -261,5 +268,22 @@ BaseType_t xReturn;
 	uxRxLoops = comINITIAL_RX_COUNT_VALUE;
 
 	return xReturn;
+}
+
+void xSerialxPrint( xComPortHandle pxPort, uint8_t * str)
+{
+	int16_t i = 0;
+	size_t stringlength;
+
+	stringlength = strlen((char *)str);
+
+	while(i < stringlength)
+	{
+		//xSerialPutChar( pxPort, str[i++]);
+		if( xSerialPutChar( xPort, str[i++], comNO_BLOCK ) == pdPASS )
+		{
+			vParTestToggleLED( uxBaseLED + comTX_LED_OFFSET );
+		}
+	}
 }
 

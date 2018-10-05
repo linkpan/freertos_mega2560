@@ -1549,17 +1549,17 @@
  1196               		.file 4 "../../Source/include/task.h"
 DEFINED SYMBOLS
                             *ABS*:0000000000000000 regtest.c
-     /tmp/cc4gpcqh.s:2      *ABS*:000000000000003e __SP_H__
-     /tmp/cc4gpcqh.s:3      *ABS*:000000000000003d __SP_L__
-     /tmp/cc4gpcqh.s:4      *ABS*:000000000000003f __SREG__
-     /tmp/cc4gpcqh.s:5      *ABS*:000000000000003b __RAMPZ__
-     /tmp/cc4gpcqh.s:6      *ABS*:0000000000000000 __tmp_reg__
-     /tmp/cc4gpcqh.s:7      *ABS*:0000000000000001 __zero_reg__
-     /tmp/cc4gpcqh.s:12     .text:0000000000000000 prvRegisterCheck1
-     /tmp/cc4gpcqh.s:1190   .bss:0000000000000000 xRegTestError
-     /tmp/cc4gpcqh.s:558    .text:0000000000000144 prvRegisterCheck2
-     /tmp/cc4gpcqh.s:1110   .text:0000000000000288 vStartRegTestTasks
-     /tmp/cc4gpcqh.s:1166   .text:00000000000002c4 xAreRegTestTasksStillRunning
+     /tmp/cckyG40P.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cckyG40P.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cckyG40P.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cckyG40P.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/cckyG40P.s:6      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cckyG40P.s:7      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cckyG40P.s:12     .text:0000000000000000 prvRegisterCheck1
+     /tmp/cckyG40P.s:1190   .bss:0000000000000000 xRegTestError
+     /tmp/cckyG40P.s:558    .text:0000000000000144 prvRegisterCheck2
+     /tmp/cckyG40P.s:1110   .text:0000000000000288 vStartRegTestTasks
+     /tmp/cckyG40P.s:1166   .text:00000000000002c4 xAreRegTestTasksStillRunning
 
 UNDEFINED SYMBOLS
 xTaskCreate

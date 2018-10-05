@@ -25,61 +25,11 @@
  * 1 tab == 4 spaces!
  */
 
-/*
- * Creates all the demo application tasks, then starts the scheduler.  The WEB
- * documentation provides more details of the demo application tasks.
- *
- * Main. c also creates a task called "Check".  This only executes every three
- * seconds but has the highest priority so is guaranteed to get processor time.
- * Its main function is to check that all the other tasks are still operational.
- * Each task that does not flash an LED maintains a unique count that is
- * incremented each time the task successfully completes its function.  Should
- * any error occur within such a task the count is permanently halted.  The
- * check task inspects the count of each task to ensure it has changed since
- * the last time the check task executed.  If all the count variables have
- * changed all the tasks are still executing error free, and the check task
- * toggles an LED.  Should any task contain an error at any time the LED toggle
- * will stop.
- *
- * The LED flash and communications test tasks do not maintain a count.
- */
-
-/*
-Changes from V1.2.0
-
-	+ Changed the baud rate for the serial test from 19200 to 57600.
-
-Changes from V1.2.3
-
-	+ The integer and comtest tasks are now used when the cooperative scheduler
-	  is being used.  Previously they were only used with the preemptive
-	  scheduler.
-
-Changes from V1.2.5
-
-	+ Set the baud rate to 38400.  This has a smaller error percentage with an
-	  8MHz clock (according to the manual).
-
-Changes from V2.0.0
-
-	+ Delay periods are now specified using variables and constants of
-	  TickType_t rather than unsigned long.
-
-Changes from V2.6.1
-
-	+ The IAR and WinAVR AVR ports are now maintained separately.
-
-Changes from V4.0.5
-
-	+ Modified to demonstrate the use of co-routines.
-
-*/
 
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef GCC_MEGA_AVR
-	/* EEPROM routines used only with the WinAVR compiler. */
 	#include <avr/eeprom.h>
 #endif
 
@@ -104,6 +54,7 @@ tasks just use the idle priority. */
 #define mainCOM_TEST_PRIORITY			( tskIDLE_PRIORITY + 2 )
 #define mainQUEUE_POLL_PRIORITY			( tskIDLE_PRIORITY + 2 )
 #define mainCHECK_TASK_PRIORITY			( tskIDLE_PRIORITY + 3 )
+#define mainLED6_TASK_PRIORITY			(tskIDLE_PRIORITY )
 
 /* Baud rate used by the serial port tasks. */
 #define mainCOM_TEST_BAUD_RATE			( ( unsigned long ) 115200 )
@@ -133,6 +84,9 @@ the demo application is not unexpectedly resetting. */
  */
 static void vErrorChecks( void *pvParameters );
 
+static void vMyLedBlink5(void);
+static void vMyLedBlink6(void);
+
 /*
  * Checks the unique counts of other tasks to ensure they are still operational.
  * Flashes an LED if everything is okay.
@@ -154,24 +108,31 @@ void vApplicationIdleHook( void );
 
 short main( void )
 {
-	prvIncrementResetCount();
+//	prvIncrementResetCount();
 
 	/* Setup the LED's for output. */
 	vParTestInitialise();
 
 	/* Create the standard demo tasks. */
-	vStartIntegerMathTasks( tskIDLE_PRIORITY );
+//	vStartIntegerMathTasks( tskIDLE_PRIORITY );
 	vAltStartComTestTasks( mainCOM_TEST_PRIORITY, mainCOM_TEST_BAUD_RATE, mainCOM_TEST_LED );  //creates tasks vComRxTask and vComTxTask
-	vStartPolledQueueTasks( mainQUEUE_POLL_PRIORITY );  //creates queue and tasks vPolledQueueConsumer, vPolledQueueProducer
-	vStartRegTestTasks();  //creates tasks prvRegisterCheck1, prvRegisterCheck2
+//	vStartPolledQueueTasks( mainQUEUE_POLL_PRIORITY );  //creates queue and tasks vPolledQueueConsumer, vPolledQueueProducer
+//	vStartRegTestTasks();  //creates tasks prvRegisterCheck1, prvRegisterCheck2
 
 	/* Create the tasks defined within this file. */
 	xTaskCreate( vErrorChecks, "Check", configMINIMAL_STACK_SIZE, NULL, mainCHECK_TASK_PRIORITY, NULL );
 
-	/* Create the co-routines that flash the LED's. */
-	//vStartFlashCoRoutines( mainNUM_FLASH_COROUTINES );
+	
+	/* Create new LED tasks to work away from default main fct*/
+	xTaskCreate(vMyLedBlink6, "LED6", configMINIMAL_STACK_SIZE, NULL, mainLED6_TASK_PRIORITY, NULL);
+	xTaskCreate(vMyLedBlink5, "LED5", configMINIMAL_STACK_SIZE, NULL, mainLED6_TASK_PRIORITY, NULL);
 
-	vSerialPutString( xComPortHandle pxPort, const signed char * const pcString, unsigned short usStringLength );
+	
+	
+	/* Create the co-routines that flash the LED's. */
+	vStartFlashCoRoutines( mainNUM_FLASH_COROUTINES );
+
+//	vSerialPutString( xComPortHandle pxPort, const signed char * const pcString, unsigned short usStringLength );
 	
 	/* In this port, to use preemptive scheduler define configUSE_PREEMPTION
 	as 1 in portmacro.h.  To use the cooperative scheduler define
@@ -252,4 +213,32 @@ void vApplicationIdleHook( void )
 {
 	vCoRoutineSchedule();
 }
+
+void vMyLedBlink6(void)
+{
+	TickType_t xLastWakeTime;
+	xLastWakeTime = xTaskGetTickCount();
+	
+	for(;;)
+	{
+		vParTestToggleLED(6);
+		vTaskDelayUntil(&xLastWakeTime, 2000); //pdMS_TO_TICKS(500));
+//		vTaskDelay(2000);
+	} //end for
+} //end myledblink6
+						
+						
+void vMyLedBlink5(void)
+{
+	//TickType_t xLastWakeTime;
+	//xLastWakeTime = xTaskGetTickCount();
+	
+	for(;;)
+	{
+		vParTestToggleLED(5);
+//		vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(2500));
+		vTaskDelay(2500);
+	} //end for
+} //end myledblink5
+
 
